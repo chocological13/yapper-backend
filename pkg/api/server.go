@@ -3,6 +3,8 @@ package api
 import (
 	"flag"
 	"fmt"
+	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/chocological13/yapper-backend/pkg/yap"
 	"log/slog"
 	"net/http"
 	"os"
@@ -42,9 +44,15 @@ func StartServer(dbpool *pgxpool.Pool) {
 
 	authAPI := auth.New(app.dbpool)
 
+	// initialize repositories and service for yap
+	queries := repository.New(app.dbpool)
+	yapService := yap.NewService(queries)
+	yapHandler := yap.NewHandler(yapService)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", authAPI.RegisterUser)
 	mux.HandleFunc("POST /login", authAPI.LoginUser)
+	mux.HandleFunc("POST /api/v1/yaps", yapHandler.CreateYap)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.port),
