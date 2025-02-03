@@ -3,11 +3,12 @@ package yap
 import (
 	"github.com/chocological13/yapper-backend/pkg/util"
 	"github.com/jackc/pgx/v5/pgtype"
+	"strings"
 )
 
 type CreateYapRequest struct {
 	// TODO : only for now without getting from ctx, remove userID once figured out
-	UserID pgtype.UUID `json:"userID"`
+	UserID pgtype.UUID `json:"user_id"`
 
 	Content string `json:"content" validate:"required,max=140"`
 }
@@ -36,4 +37,5 @@ type DeleteYapRequest struct {
 func ValidateYapContent(v *util.Validator, input string) {
 	v.Check(len(input) > 0, "content", "must be greater than zero")
 	v.Check(len(input) <= 140, "content", "must not be greater than 140")
+	v.Check(len(strings.TrimSpace(input)) > 0, "content", "must not be blank")
 }
