@@ -2,7 +2,14 @@ package yap
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+var (
+	ErrYapNotFound = errors.New("Yap not found")
 )
 
 type Service struct {
@@ -28,6 +35,23 @@ func (s *Service) CreateYap(ctx context.Context, req CreateYapRequest) (*YapResp
 	})
 
 	if err != nil {
+		return nil, err
+	}
+
+	return &YapResponse{
+		YapID:     yap.YapID,
+		UserID:    yap.UserID,
+		Content:   yap.Content,
+		CreatedAt: yap.CreatedAt,
+	}, nil
+}
+
+func (s *Service) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapResponse, error) {
+	yap, err := s.queries.GetYapByID(ctx, yapID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrYapNotFound
+		}
 		return nil, err
 	}
 

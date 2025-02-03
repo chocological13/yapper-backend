@@ -52,7 +52,10 @@ func StartServer(dbpool *pgxpool.Pool) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", authAPI.RegisterUser)
 	mux.HandleFunc("POST /login", authAPI.LoginUser)
+
+	// yaps
 	mux.HandleFunc("POST /api/v1/yaps", yapHandler.CreateYap)
+	mux.HandleFunc("GET /api/v1/yaps/{id}", yapHandler.GetYapByID)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.port),

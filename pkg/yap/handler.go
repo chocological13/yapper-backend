@@ -3,7 +3,9 @@ package yap
 import (
 	"github.com/chocological13/yapper-backend/pkg/apierror"
 	"github.com/chocological13/yapper-backend/pkg/util"
+	"github.com/jackc/pgx/v5/pgtype"
 	"net/http"
+	"strings"
 )
 
 type Handler struct {
@@ -38,5 +40,40 @@ func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	util.WriteJSON(w, http.StatusCreated, util.Envelope{"yap": yap}, nil)
+	err = util.WriteJSON(w, http.StatusCreated, util.Envelope{"yap": yap}, nil)
+	if err != nil {
+		apierror.ServerErrorResponse(w)
+		return
+	}
+}
+
+func (h *Handler) GetYapByID(w http.ResponseWriter, r *http.Request) {
+	// TODO : use a helper to parse URL params later
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/yaps/")
+
+	uuidStr := strings.Split(path, "/")[0]
+
+	var yapID pgtype.UUID
+	err := yapID.Scan(uuidStr)
+	if err != nil {
+		apierror.ServerErrorResponse(w)
+		return
+	}
+
+	yap, err := h.service.GetYapByID(r.Context(), yapID)
+	if err != nil {
+		switch err {
+		case ErrYapNotFound:
+			apierror.NotFoundResponse(w)
+		default:
+			apierror.ServerErrorResponse(w)
+		}
+		return
+	}
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"yap": yap}, nil)
+	if err != nil {
+		apierror.ServerErrorResponse(w)
+		return
+	}
 }
