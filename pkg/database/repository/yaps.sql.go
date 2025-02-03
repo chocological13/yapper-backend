@@ -76,22 +76,22 @@ func (q *Queries) GetYapByID(ctx context.Context, yapID pgtype.UUID) (Yap, error
 	return i, err
 }
 
-const listYapsByUserID = `-- name: ListYapsByUserID :many
+const listYapsByUser = `-- name: ListYapsByUser :many
 SELECT yap_id, user_id, content, created_at, updated_at, deleted_at
 FROM yaps
 WHERE user_id = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC
-LIMIT COALESCE($2, 10) OFFSET COALESCE($3, 0)
+LIMIT COALESCE($2, 20) OFFSET COALESCE($3, 0)
 `
 
-type ListYapsByUserIDParams struct {
+type ListYapsByUserParams struct {
 	UserID  pgtype.UUID
 	Column2 interface{}
 	Column3 interface{}
 }
 
-func (q *Queries) ListYapsByUserID(ctx context.Context, arg ListYapsByUserIDParams) ([]Yap, error) {
-	rows, err := q.db.Query(ctx, listYapsByUserID, arg.UserID, arg.Column2, arg.Column3)
+func (q *Queries) ListYapsByUser(ctx context.Context, arg ListYapsByUserParams) ([]Yap, error) {
+	rows, err := q.db.Query(ctx, listYapsByUser, arg.UserID, arg.Column2, arg.Column3)
 	if err != nil {
 		return nil, err
 	}

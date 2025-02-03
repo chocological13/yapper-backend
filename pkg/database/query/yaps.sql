@@ -10,12 +10,12 @@ SELECT *
 FROM yaps
 WHERE yap_id = $1 AND deleted_at IS NULL;
 
--- name: ListYapsByUserID :many
+-- name: ListYapsByUser :many
 SELECT *
 FROM yaps
 WHERE user_id = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC
-LIMIT COALESCE($2, 10) OFFSET COALESCE($3, 0);
+LIMIT COALESCE($2, 20) OFFSET COALESCE($3, 0);
 
 -- name: UpdateYap :one
 UPDATE yaps
