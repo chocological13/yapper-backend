@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"os"
 
 	"github.com/chocological13/yapper-backend/pkg/api"
@@ -15,8 +16,12 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
 	dbpool := database.ConnectDB(os.Getenv("DATABASE_URL"))
 	defer dbpool.Close()
+
+	logger.Info("database connection pool established")
 
 	api.StartServer(dbpool)
 }
