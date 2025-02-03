@@ -11,15 +11,11 @@ var GlobalErrorHandler *ErrorHandler // Global variable
 
 // Initialize the global ErrorHandler once
 func init() {
-	GlobalErrorHandler = NewErrorHandler(slog.Default())
+	GlobalErrorHandler = &ErrorHandler{logger: slog.Default()}
 }
 
 type ErrorHandler struct {
 	logger *slog.Logger
-}
-
-func NewErrorHandler(logger *slog.Logger) *ErrorHandler {
-	return &ErrorHandler{logger: logger}
 }
 
 func (eh *ErrorHandler) logError(r *http.Request, err error) {
