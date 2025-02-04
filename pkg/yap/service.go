@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// TODO : consider updating apierror to include custom message
 var (
 	ErrYapNotFound        = errors.New("Yap not found")
 	ErrUnauthorizedYapper = errors.New("This yap isn't yours to access")
@@ -129,4 +130,28 @@ func (s *Service) UpdateYap(ctx context.Context, req UpdateYapRequest) (*YapResp
 		Content:   yap.Content,
 		CreatedAt: yap.CreatedAt,
 	}, nil
+}
+
+func (s *Service) DeleteYap(ctx context.Context, yapID pgtype.UUID, userID pgtype.UUID) error {
+	yap, err := s.GetYapByID(ctx, yapID)
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return ErrYapNotFound
+		default:
+			return err
+		}
+	}
+
+	if yap.UserID != userID {
+		return ErrUnauthorizedYapper
+	}
+
+	params := repository.DeleteYapParams{
+		YapID:  yapID,
+		UserID: userID,
+	}
+
+	err = s.queries.DeleteYap(ctx, params)
+	return err
 }

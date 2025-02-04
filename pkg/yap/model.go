@@ -33,7 +33,12 @@ type UpdateYapRequest struct {
 	Content string      `json:"content" validate:"required,max=140"`
 }
 
+// TODO : delete when getting userID from context is possible
+// Get YapID from URL params afterwards
 type DeleteYapRequest struct {
+	// TODO : only for now without getting from ctx, remove userID once figured out
+	UserID pgtype.UUID `json:"user_id"`
+
 	YapID pgtype.UUID `json:"yap_id"`
 }
 

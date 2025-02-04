@@ -159,3 +159,29 @@ func (h *Handler) UpdateYap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+func (h *Handler) DeleteYap(w http.ResponseWriter, r *http.Request) {
+	var input DeleteYapRequest
+	if err := util.ReadJSON(w, r, &input); err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	err := h.service.DeleteYap(r.Context(), input.YapID, input.UserID)
+	if err != nil {
+		switch err {
+		case ErrYapNotFound:
+			apierror.GlobalErrorHandler.NotFoundResponse(w, r)
+		case ErrUnauthorizedYapper:
+			apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
+		default:
+			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "yap successfully unyapped"}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+	}
+}
