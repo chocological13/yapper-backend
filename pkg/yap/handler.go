@@ -5,7 +5,6 @@ import (
 	"github.com/chocological13/yapper-backend/pkg/util"
 	"github.com/jackc/pgx/v5/pgtype"
 	"net/http"
-	"strings"
 )
 
 type Handler struct {
@@ -22,7 +21,7 @@ func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
 
 	var input CreateYapRequest
 	if err := util.ReadJSON(w, r, &input); err != nil {
-		apierror.Write(w, http.StatusBadRequest, err.Error())
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
@@ -30,33 +29,28 @@ func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
 	ValidateYapContent(v, input.Content)
 
 	if !v.Valid() {
-		apierror.FailedValidationResponse(w, v.Errors)
+		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
 	yap, err := h.service.CreateYap(r.Context(), input)
 	if err != nil {
-		apierror.ServerErrorResponse(w)
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 
 	err = util.WriteJSON(w, http.StatusCreated, util.Envelope{"yap": yap}, nil)
 	if err != nil {
-		apierror.ServerErrorResponse(w)
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 }
 
 func (h *Handler) GetYapByID(w http.ResponseWriter, r *http.Request) {
-	// TODO : use a helper to parse URL params later
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/yaps/")
 
-	uuidStr := strings.Split(path, "/")[0]
-
-	var yapID pgtype.UUID
-	err := yapID.Scan(uuidStr)
+	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
 	if err != nil {
-		apierror.ServerErrorResponse(w)
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 
@@ -64,16 +58,61 @@ func (h *Handler) GetYapByID(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch err {
 		case ErrYapNotFound:
-			apierror.NotFoundResponse(w)
+			apierror.GlobalErrorHandler.NotFoundResponse(w, r)
 		default:
-			apierror.ServerErrorResponse(w)
+			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 		}
 		return
 	}
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"yap": yap}, nil)
 	if err != nil {
-		apierror.ServerErrorResponse(w)
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		return
+	}
+}
+
+func (h *Handler) ListsYapByUser(w http.ResponseWriter, r *http.Request) {
+	qs := r.URL.Query()
+
+	userIDstr := qs.Get("user_id")
+
+	var userID pgtype.UUID
+
+	if userIDstr != "" {
+		err := userID.Scan(userIDstr)
+		if err != nil {
+			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+			return
+		}
+	} else {
+		// TODO : get user from context
+	}
+
+	var input ListYapsRequest
+
+	v := util.NewValidator()
+	input.Limit = int32(util.ReadInt(qs, "limit", 20, v))
+	input.Offset = int32(util.ReadInt(qs, "offset", 0, v))
+	if !v.Valid() {
+		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	yaps, err := h.service.ListYapsByUser(r.Context(), userID, input)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		return
+	}
+
+	if len(yaps) == 0 {
+		apierror.GlobalErrorHandler.WriteError(w, r, http.StatusNotFound, "this user has not yapped any yap")
+		return
+	}
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"yaps": yaps}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 }

@@ -2,9 +2,9 @@ package yap
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -49,7 +49,7 @@ func (s *Service) CreateYap(ctx context.Context, req CreateYapRequest) (*YapResp
 func (s *Service) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapResponse, error) {
 	yap, err := s.queries.GetYapByID(ctx, yapID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrYapNotFound
 		}
 		return nil, err
@@ -61,4 +61,34 @@ func (s *Service) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapRespon
 		Content:   yap.Content,
 		CreatedAt: yap.CreatedAt,
 	}, nil
+}
+
+// ListYapsByUser fetches yaps made by a user
+func (s *Service) ListYapsByUser(ctx context.Context, userID pgtype.UUID, req ListYapsRequest) ([]*YapResponse, error) {
+	params := repository.ListYapsByUserParams{
+		UserID:  userID,
+		Column2: req.Limit,
+		Column3: req.Offset,
+	}
+
+	yaps, err := s.queries.ListYapsByUser(ctx, params)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrYapNotFound
+		}
+
+		return nil, err
+	}
+
+	yapResponses := make([]*YapResponse, len(yaps))
+	for i, yap := range yaps {
+		yapResponses[i] = &YapResponse{
+			YapID:     yap.YapID,
+			UserID:    yap.UserID,
+			Content:   yap.Content,
+			CreatedAt: yap.CreatedAt,
+		}
+	}
+
+	return yapResponses, nil
 }
