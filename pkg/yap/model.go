@@ -26,7 +26,11 @@ type ListYapsRequest struct {
 }
 
 type UpdateYapRequest struct {
-	Content string `json:"content" validate:"required,max=140"`
+	// TODO : only for now without getting from ctx, remove userID once figured out
+	UserID pgtype.UUID `json:"user_id"`
+
+	YapID   pgtype.UUID `json:"yap_id" validate:"required"`
+	Content string      `json:"content" validate:"required,max=140"`
 }
 
 type DeleteYapRequest struct {

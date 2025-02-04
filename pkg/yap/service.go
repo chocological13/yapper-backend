@@ -9,7 +9,8 @@ import (
 )
 
 var (
-	ErrYapNotFound = errors.New("Yap not found")
+	ErrYapNotFound        = errors.New("Yap not found")
+	ErrUnauthorizedYapper = errors.New("This yap isn't yours to access")
 )
 
 type Service struct {
@@ -91,4 +92,41 @@ func (s *Service) ListYapsByUser(ctx context.Context, userID pgtype.UUID, req Li
 	}
 
 	return yapResponses, nil
+}
+
+// UpdateYap updates an existing Yap with the provided information.
+// Note: This feature is currently implemented but may be removed in the future
+// in the case that a yap is decidedly immutable
+func (s *Service) UpdateYap(ctx context.Context, req UpdateYapRequest) (*YapResponse, error) {
+	params := repository.UpdateYapParams{
+		YapID:   req.YapID,
+		Content: req.Content,
+		UserID:  req.UserID,
+	}
+
+	yap, err := s.queries.GetYapByID(ctx, req.YapID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrYapNotFound
+		}
+		return nil, err
+	}
+
+	// TODO : check if yap actually belongs to the user
+	// right now it's checking from request, but check with the logged in user in the future
+	if yap.UserID != req.UserID {
+		return nil, ErrUnauthorizedYapper
+	}
+
+	yap, err = s.queries.UpdateYap(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	return &YapResponse{
+		YapID:     yap.YapID,
+		UserID:    yap.UserID,
+		Content:   yap.Content,
+		CreatedAt: yap.CreatedAt,
+	}, nil
 }

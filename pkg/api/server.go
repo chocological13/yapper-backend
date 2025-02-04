@@ -64,6 +64,7 @@ func StartServer(dbpool *pgxpool.Pool) {
 	mux.HandleFunc("POST /api/v1/yaps", yapHandler.CreateYap)
 	mux.HandleFunc("GET /api/v1/yaps/{id}", yapHandler.GetYapByID)
 	mux.HandleFunc("GET /api/v1/yaps", yapHandler.ListsYapByUser)
+	mux.HandleFunc("PUT /api/v1/yaps/{id}", yapHandler.UpdateYap)
 
 	// ! apply future middleware here as needed
 	muxWithMiddleware := middleware.LogRequests(app.logger)(mux)

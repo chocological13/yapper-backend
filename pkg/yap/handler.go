@@ -85,6 +85,7 @@ func (h *Handler) ListsYapByUser(w http.ResponseWriter, r *http.Request) {
 			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 			return
 		}
+		// TODO : check if user exists
 	} else {
 		// TODO : get user from context
 	}
@@ -111,6 +112,48 @@ func (h *Handler) ListsYapByUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"yaps": yaps}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		return
+	}
+}
+
+func (h *Handler) UpdateYap(w http.ResponseWriter, r *http.Request) {
+	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		return
+	}
+
+	var input UpdateYapRequest
+	if err := util.ReadJSON(w, r, &input); err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	input.YapID = yapID
+
+	v := util.NewValidator()
+	ValidateYapContent(v, input.Content)
+	if !v.Valid() {
+		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	yap, err := h.service.UpdateYap(r.Context(), input)
+	if err != nil {
+		switch err {
+		case ErrYapNotFound:
+			apierror.GlobalErrorHandler.NotFoundResponse(w, r)
+		case ErrUnauthorizedYapper:
+			apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
+		default:
+			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"yap": yap}, nil)
 	if err != nil {
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 		return
