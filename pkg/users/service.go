@@ -122,6 +122,66 @@ func (s *UserService) UpdateEmail(ctx context.Context, req UpdateEmailRequest) (
 	return mapUserFromDB(updatedUser), nil
 }
 
+// TODO: Complete implementation of password reset flow
+// 1. Make service to generate verification token
+// 2. Store token
+// 3. Send verification email
+// 4. Store pending email change
+// 5. Confirm email, verify token
+// 6. Hash new password before saving
+// 7. Update user
+// ? Note: Export hash password from auth? Make new service? Make UserGetter interface in auth?
+
+// ForgotPassword currently provides a skeleton implementation of the overall forgot password functionality.
+// This is for logged-out users who can't access their account
+func (s *UserService) ForgotPassword(ctx context.Context, req ForgotPasswordRequest) error {
+	user, err := s.GetUser(ctx, GetUserRequest{Email: req.Email})
+	if err != nil {
+		return err
+	}
+
+	// Hash password before updating
+	hashedPassword, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+
+	err = s.repository.UpdatePassword(ctx, repository.UpdatePasswordParams{
+		UserID:   user.ID,
+		Password: hashedPassword,
+	})
+	if err != nil {
+		return fmt.Errorf("updating password: %w", err)
+	}
+
+	return nil
+}
+
+// ResetPassword currently provides a skeleton implementation of the overall forgot password functionality.
+// This is for logged-in users who want to update their passwords
+func (s *UserService) ResetPassword(ctx context.Context, req ResetPasswordRequest) error {
+	user, err := s.GetCurrentUser(ctx)
+	if err != nil {
+		return err
+	}
+
+	match, _, err := auth.VerifyPassword(req.CurrentPassword, user.Password)
+	if !match {
+		return ErrInvalidPassword
+	}
+
+	hashedPassword, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+
+	err = s.repository.UpdatePassword(ctx, repository.UpdatePasswordParams{
+		UserID:   user.ID,
+		Password: hashedPassword,
+	})
+	return err
+}
+
 // Helper function to map database user to domain user
 func mapUserFromDB(dbUser repository.User) *User {
 	return &User{
