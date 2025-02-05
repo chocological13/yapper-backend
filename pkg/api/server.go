@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/chocological13/yapper-backend/pkg/api/middleware"
+	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/chocological13/yapper-backend/pkg/users"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,6 +20,8 @@ import (
 )
 
 const version = "0.1.0"
+
+const apiVersion = "/api/v1"
 
 type config struct {
 	port int
@@ -49,12 +53,25 @@ func StartServer(dbpool *pgxpool.Pool) {
 
 	authAPI := auth.New(app.dbpool)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /register", authAPI.RegisterUser)
-	mux.HandleFunc("POST /login", authAPI.LoginUser)
+	queries := repository.New(app.dbpool)
+	userService := users.NewUserService(queries)
+	userHandler := users.NewUserHandler(userService)
 
-	// ! apply future middleware here as needed
-	muxWithMiddleware := middleware.LogRequests(app.logger)(mux)
+	mux := http.NewServeMux()
+
+	// Auth routes
+	mux.HandleFunc("POST "+apiVersion+"/register", authAPI.RegisterUser)
+	mux.HandleFunc("POST "+apiVersion+"/login", authAPI.LoginUser)
+
+	// Testing purposes
+	mux.HandleFunc("GET "+apiVersion+"/users", userHandler.GetUser)
+
+	// Protected routes (auth required)
+	// Users
+	mux.Handle("GET "+apiVersion+"/users/me", middleware.Auth(http.HandlerFunc(userHandler.GetCurrentUser)))
+
+	// Add future middleware here
+	muxWithMiddleware := middleware.LogRequests(logger)(mux)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.port),
