@@ -69,6 +69,7 @@ func StartServer(dbpool *pgxpool.Pool) {
 	// Protected routes (auth required)
 	// Users
 	mux.Handle("GET "+apiVersion+"/users/me", middleware.Auth(http.HandlerFunc(userHandler.GetCurrentUser)))
+	mux.Handle("PUT "+apiVersion+"/users/me", middleware.Auth(http.HandlerFunc(userHandler.UpdateUser)))
 
 	// Add future middleware here
 	muxWithMiddleware := middleware.LogRequests(logger)(mux)

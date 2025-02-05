@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -59,6 +60,27 @@ func (s *UserService) GetCurrentUser(ctx context.Context) (*User, error) {
 	return s.GetUser(ctx, GetUserRequest{Email: email})
 }
 
+func (s *UserService) UpdateUser(ctx context.Context, arg UpdateUserRequest) (*User, error) {
+	user, err := s.GetCurrentUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	updatedUser, err := s.repository.UpdateUser(ctx, repository.UpdateUserParams{
+		UserID:   user.ID,
+		Username: arg.Username,
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.ConstraintName == "users_username_key" {
+			return nil, ErrDuplicateUsername
+		}
+		return nil, fmt.Errorf("updating user: %w", err)
+	}
+
+	return mapUserFromDB(updatedUser), err
+}
+
 // Helper function to map database user to domain user
 func mapUserFromDB(dbUser repository.User) *User {
 	return &User{
@@ -79,3 +101,5 @@ func mapTimestamptz(t pgtype.Timestamptz) *pgtype.Timestamptz {
 	}
 	return &t
 }
+
+// Helper function to see
