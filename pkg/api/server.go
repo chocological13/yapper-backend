@@ -59,6 +59,7 @@ func StartServer(dbpool *pgxpool.Pool) {
 
 	mux := http.NewServeMux()
 
+	// Public routes
 	// Auth routes
 	mux.HandleFunc("POST "+apiVersion+"/register", authAPI.RegisterUser)
 	mux.HandleFunc("POST "+apiVersion+"/login", authAPI.LoginUser)
@@ -70,6 +71,7 @@ func StartServer(dbpool *pgxpool.Pool) {
 	// Users
 	mux.Handle("GET "+apiVersion+"/users/me", middleware.Auth(http.HandlerFunc(userHandler.GetCurrentUser)))
 	mux.Handle("PUT "+apiVersion+"/users/me", middleware.Auth(http.HandlerFunc(userHandler.UpdateUser)))
+	mux.Handle("PUT "+apiVersion+"/users/me/email", middleware.Auth(http.HandlerFunc(userHandler.UpdateUserEmail)))
 
 	// Add future middleware here
 	muxWithMiddleware := middleware.LogRequests(logger)(mux)

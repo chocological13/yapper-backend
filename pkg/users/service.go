@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chocological13/yapper-backend/pkg/auth"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -34,11 +35,11 @@ func NewUserService(repository *repository.Queries) *UserService {
 	return &UserService{repository: repository}
 }
 
-func (s *UserService) GetUser(ctx context.Context, arg GetUserRequest) (*User, error) {
+func (s *UserService) GetUser(ctx context.Context, req GetUserRequest) (*User, error) {
 	user, err := s.repository.GetUser(ctx, repository.GetUserParams{
-		UserID:   arg.UserID,
-		Username: arg.Username,
-		Email:    arg.Email,
+		UserID:   req.UserID,
+		Username: req.Username,
+		Email:    req.Email,
 	})
 
 	if err != nil {
@@ -60,7 +61,7 @@ func (s *UserService) GetCurrentUser(ctx context.Context) (*User, error) {
 	return s.GetUser(ctx, GetUserRequest{Email: email})
 }
 
-func (s *UserService) UpdateUser(ctx context.Context, arg UpdateUserRequest) (*User, error) {
+func (s *UserService) UpdateUser(ctx context.Context, req UpdateUserRequest) (*User, error) {
 	user, err := s.GetCurrentUser(ctx)
 	if err != nil {
 		return nil, err
@@ -68,7 +69,7 @@ func (s *UserService) UpdateUser(ctx context.Context, arg UpdateUserRequest) (*U
 
 	updatedUser, err := s.repository.UpdateUser(ctx, repository.UpdateUserParams{
 		UserID:   user.ID,
-		Username: arg.Username,
+		Username: req.Username,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -79,6 +80,46 @@ func (s *UserService) UpdateUser(ctx context.Context, arg UpdateUserRequest) (*U
 	}
 
 	return mapUserFromDB(updatedUser), err
+}
+
+// TODO: Complete implementation of email verification flow
+// 1. Make service to generate verification token
+// 2. Store new email in the token (if with jwt) or with
+// 3. Send verification email
+// 4. Store pending email change
+// 5. Confirm email, verify token
+// 6. Update user
+
+// UpdateEmail currently provides a skeleton implementation of the overall update email
+// functionality. TODO : complete after mailer service is established
+func (s *UserService) UpdateEmail(ctx context.Context, req UpdateEmailRequest) (*User, error) {
+	user, err := s.GetCurrentUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify current password as a layer of security for now
+	match, _, err := auth.VerifyPassword(req.Password, user.Password)
+	if err != nil {
+		return nil, fmt.Errorf("verifying password: %w", err)
+	}
+	if !match {
+		return nil, ErrInvalidPassword
+	}
+
+	updatedUser, err := s.repository.UpdateEmail(ctx, repository.UpdateEmailParams{
+		UserID: user.ID,
+		Email:  req.NewEmail,
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.ConstraintName == "users_email_key" {
+			return nil, ErrDuplicateEmail
+		}
+		return nil, fmt.Errorf("updating email: %w", err)
+	}
+
+	return mapUserFromDB(updatedUser), nil
 }
 
 // Helper function to map database user to domain user
@@ -101,5 +142,3 @@ func mapTimestamptz(t pgtype.Timestamptz) *pgtype.Timestamptz {
 	}
 	return &t
 }
-
-// Helper function to see

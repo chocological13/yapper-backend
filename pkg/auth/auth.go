@@ -9,7 +9,7 @@ import (
 )
 
 func register(ctx context.Context, dbpool *pgxpool.Pool, p *AuthInput) (string, error) {
-	password_hash, err := hashPassword(p.Password)
+	password_hash, err := HashPassword(p.Password)
 	if err != nil {
 		return "", err
 	}
@@ -44,7 +44,7 @@ func login(ctx context.Context, dbpool *pgxpool.Pool, p *AuthInput) (string, err
 		return "", err
 	}
 
-	match, _, err := verifyPassword(p.Password, user.Password)
+	match, _, err := VerifyPassword(p.Password, user.Password)
 	if err != nil {
 		return "", err
 	}

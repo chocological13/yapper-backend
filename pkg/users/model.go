@@ -27,15 +27,10 @@ type UpdateUserRequest struct {
 }
 
 type UpdateEmailRequest struct {
-	Email string `json:"email"`
+	NewEmail string `json:"new_email"`
 
 	// For password confirmation
 	Password string `json:"password"`
-}
-
-type UpdatePasswordRequest struct {
-	CurrentPassword string `json:"current_password"`
-	NewPassword     string `json:"new_password"`
 }
 
 type EmailVerificationData struct {

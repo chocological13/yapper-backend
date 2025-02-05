@@ -84,3 +84,32 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 	}
 }
+
+func (h *UserHandler) UpdateUserEmail(w http.ResponseWriter, r *http.Request) {
+	var input UpdateEmailRequest
+	err := util.ReadJSON(w, r, &input)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		return
+	}
+
+	user, err := h.service.UpdateEmail(r.Context(), input)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrUserNotFound):
+			apierror.GlobalErrorHandler.NotFoundResponse(w, r)
+		case errors.Is(err, ErrContextNotFound):
+			apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
+		case errors.Is(err, ErrDuplicateEmail):
+			apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		default:
+			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"user": user}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+	}
+}
