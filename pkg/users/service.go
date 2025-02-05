@@ -182,6 +182,23 @@ func (s *UserService) ResetPassword(ctx context.Context, req ResetPasswordReques
 	return err
 }
 
+func (s *UserService) DeleteUser(ctx context.Context, req DeleteUserRequest) error {
+	// TODO : add more confirmation with email confirmation
+
+	user, err := s.GetCurrentUser(ctx)
+	if err != nil {
+		return err
+	}
+
+	match, _, err := auth.VerifyPassword(req.Password, user.Password)
+	if !match {
+		return ErrInvalidPassword
+	}
+
+	err = s.repository.DeleteUser(ctx, user.ID)
+	return err
+}
+
 // Helper function to map database user to domain user
 func mapUserFromDB(dbUser repository.User) *User {
 	return &User{

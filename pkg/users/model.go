@@ -43,6 +43,10 @@ type ResetPasswordRequest struct {
 	NewPassword     string `json:"new_password"`
 }
 
+type DeleteUserRequest struct {
+	Password string `json:"password"`
+}
+
 type EmailVerificationData struct {
 	UserID    pgtype.UUID `json:"user_id"`
 	Token     string      `json:"token"`

@@ -181,6 +181,38 @@ func (h *UserHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	var input DeleteUserRequest
+	err := util.ReadJSON(w, r, &input)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		return
+	}
+
+	err = h.service.DeleteUser(r.Context(), input)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrUserNotFound):
+			apierror.GlobalErrorHandler.NotFoundResponse(w, r)
+		case errors.Is(err, ErrContextNotFound):
+			apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
+		case errors.Is(err, ErrInvalidPassword):
+			apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		default:
+			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	// TODO : needs a way to invalidate the jwt as well or a logout function
+	h.clearAuthContext(w, r)
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "user successfully deleted"}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+	}
+}
+
 // helper to clear context after reset password
 func (h *UserHandler) clearAuthContext(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{

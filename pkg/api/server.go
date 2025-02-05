@@ -76,6 +76,7 @@ func StartServer(dbpool *pgxpool.Pool) {
 	mux.Handle("PUT "+apiVersion+"/users/me", middleware.Auth(http.HandlerFunc(userHandler.UpdateUser)))
 	mux.Handle("PUT "+apiVersion+"/users/me/email", middleware.Auth(http.HandlerFunc(userHandler.UpdateUserEmail)))
 	mux.Handle("PUT "+apiVersion+"/users/me/reset-password", middleware.Auth(http.HandlerFunc(userHandler.ResetPassword)))
+	mux.Handle("DELETE "+apiVersion+"/users/me", middleware.Auth(http.HandlerFunc(userHandler.DeleteUser)))
 
 	// Add future middleware here
 	muxWithMiddleware := middleware.LogRequests(logger)(mux)
