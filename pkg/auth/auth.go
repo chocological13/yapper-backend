@@ -66,10 +66,7 @@ func login(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *Auth
 		return "", ErrInvalidCredentials
 	}
 
-	val, err := rdb.Get(ctx, fmt.Sprintf("jwt:%s", p.Email)).Result()
-	if err != nil {
-		return "", err
-	}
+	val, _ := rdb.Get(ctx, fmt.Sprintf("jwt:%s", p.Email)).Result()
 	if val != "" {
 		return val, nil
 	}
