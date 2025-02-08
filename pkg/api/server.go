@@ -5,15 +5,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/chocological13/yapper-backend/pkg/api/middleware"
-	"github.com/chocological13/yapper-backend/pkg/database/repository"
-	"github.com/chocological13/yapper-backend/pkg/users"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/chocological13/yapper-backend/pkg/api/middleware"
+	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/chocological13/yapper-backend/pkg/users"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/chocological13/yapper-backend/pkg/auth"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,9 +34,10 @@ type app struct {
 	cfg    config
 	logger *slog.Logger
 	dbpool *pgxpool.Pool
+	rdb    *redis.Client
 }
 
-func StartServer(dbpool *pgxpool.Pool) {
+func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 	var cfg config
 
 	flag.IntVar(&cfg.port, "port", 8080, "API server port")
@@ -49,9 +52,10 @@ func StartServer(dbpool *pgxpool.Pool) {
 		cfg,
 		logger,
 		dbpool,
+		rdb,
 	}
 
-	authAPI := auth.New(app.dbpool)
+	authAPI := auth.New(app.dbpool, app.rdb)
 
 	queries := repository.New(app.dbpool)
 	userService := users.NewUserService(queries)
@@ -72,11 +76,11 @@ func StartServer(dbpool *pgxpool.Pool) {
 
 	// Protected routes (auth required)
 	// Users
-	mux.Handle("GET "+apiVersion+"/users/me", middleware.Auth(http.HandlerFunc(userHandler.GetCurrentUser)))
-	mux.Handle("PUT "+apiVersion+"/users/me", middleware.Auth(http.HandlerFunc(userHandler.UpdateUser)))
-	mux.Handle("PUT "+apiVersion+"/users/me/email", middleware.Auth(http.HandlerFunc(userHandler.UpdateUserEmail)))
-	mux.Handle("PUT "+apiVersion+"/users/me/reset-password", middleware.Auth(http.HandlerFunc(userHandler.ResetPassword)))
-	mux.Handle("DELETE "+apiVersion+"/users/me", middleware.Auth(http.HandlerFunc(userHandler.DeleteUser)))
+	mux.Handle("GET "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.GetCurrentUser)))
+	mux.Handle("PUT "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.UpdateUser)))
+	mux.Handle("PUT "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.UpdateUserEmail)))
+	mux.Handle("PUT "+apiVersion+"/users/me/reset-password", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.ResetPassword)))
+	mux.Handle("DELETE "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.DeleteUser)))
 
 	// Add future middleware here
 	muxWithMiddleware := middleware.LogRequests(logger)(mux)

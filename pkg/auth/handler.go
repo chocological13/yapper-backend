@@ -2,9 +2,11 @@ package auth
 
 import (
 	"errors"
-	"github.com/jackc/pgx/v5"
 	"net/http"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/chocological13/yapper-backend/pkg/apierror"
 	"github.com/chocological13/yapper-backend/pkg/util"
@@ -13,11 +15,13 @@ import (
 
 type AuthAPI struct {
 	dbpool *pgxpool.Pool
+	rdb    *redis.Client
 }
 
-func New(dbpool *pgxpool.Pool) *AuthAPI {
+func New(dbpool *pgxpool.Pool, rdb *redis.Client) *AuthAPI {
 	return &AuthAPI{
 		dbpool,
+		rdb,
 	}
 }
 
@@ -36,9 +40,9 @@ func (api *AuthAPI) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jwt, err := register(r.Context(), api.dbpool, &input)
+	jwt, err := register(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 
@@ -73,10 +77,10 @@ func (api *AuthAPI) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jwt, err := login(r.Context(), api.dbpool, &input)
+	jwt, err := login(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
 		switch {
-		case errors.Is(err, pgx.ErrNoRows), err.Error() == "Invalid credentials":
+		case errors.Is(err, pgx.ErrNoRows), errors.Is(err, ErrInvalidCredentials):
 			apierror.GlobalErrorHandler.InvalidCredentialsResponse(w, r)
 		default:
 			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
