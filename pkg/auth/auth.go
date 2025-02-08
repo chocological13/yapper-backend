@@ -38,7 +38,7 @@ func register(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *A
 		return "", ErrJWTGenerationError
 	}
 
-	err = rdb.Set(ctx, fmt.Sprintf("jwt:%s:", p.Email), jwt, 7*24*time.Hour).Err()
+	err = rdb.Set(ctx, fmt.Sprintf("jwt:%s", p.Email), jwt, 7*24*time.Hour).Err()
 	if err != nil {
 		return "", ErrJWTGenerationError
 	}
@@ -66,7 +66,7 @@ func login(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *Auth
 		return "", ErrInvalidCredentials
 	}
 
-	val, err := rdb.Get(ctx, fmt.Sprintf("jwt:%s:", p.Email)).Result()
+	val, err := rdb.Get(ctx, fmt.Sprintf("jwt:%s", p.Email)).Result()
 	if err != nil {
 		return "", err
 	}
@@ -79,7 +79,7 @@ func login(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *Auth
 		return "", ErrJWTGenerationError
 	}
 
-	err = rdb.Set(ctx, fmt.Sprintf("jwt:%s:", p.Email), jwt, 7*24*time.Hour).Err()
+	err = rdb.Set(ctx, fmt.Sprintf("jwt:%s", p.Email), jwt, 7*24*time.Hour).Err()
 	if err != nil {
 		return "", ErrJWTGenerationError
 	}

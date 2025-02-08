@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -102,4 +104,30 @@ func (api *AuthAPI) LoginUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 	}
+}
+
+func (api *AuthAPI) LogoutUser(w http.ResponseWriter, r *http.Request) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		apierror.GlobalErrorHandler.InvalidCredentialsResponse(w, r)
+		return
+	}
+
+	err := api.rdb.Set(r.Context(), fmt.Sprintf("jwt:blacklist:%s", authHeader), authHeader, 7*24*time.Hour).Err()
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "jwt",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
+
+	*r = *r.WithContext(context.Background())
 }

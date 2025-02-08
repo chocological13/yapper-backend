@@ -67,6 +67,7 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 	// Auth routes
 	mux.HandleFunc("POST "+apiVersion+"/register", authAPI.RegisterUser)
 	mux.HandleFunc("POST "+apiVersion+"/login", authAPI.LoginUser)
+	mux.Handle("POST "+apiVersion+"/logout", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.LogoutUser)))
 
 	// Users routes
 	// mux.HandleFunc("PUT "+apiVersion+"/users/me/forgot-password", userHandler.ForgotPassword)
