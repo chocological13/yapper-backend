@@ -12,6 +12,11 @@ type AuthInput struct {
 	Password string `json:"password"`
 }
 
+type ForgotPasswordInput struct {
+	Email       string `json:"email"`
+	NewPassword string `json:"new_password"`
+}
+
 func (input *AuthInput) validate(isRegistering bool, v *util.Validator) map[string]string {
 
 	if isRegistering {
@@ -24,6 +29,15 @@ func (input *AuthInput) validate(isRegistering bool, v *util.Validator) map[stri
 	}
 
 	v.Check(input.Password != "", "Password", "Must not be empty")
+
+	return v.Errors
+}
+
+func (input *ForgotPasswordInput) validateForgotPassword(v *util.Validator) map[string]string {
+	v.Check(input.NewPassword != "", "NewPassword", "Must not be empty")
+	v.Check(input.Email != "", "Email", "Must not be empty")
+	isValidEmail := validateEmail(input.Email)
+	v.Check(isValidEmail, "Email", "Email must be valid")
 
 	return v.Errors
 }

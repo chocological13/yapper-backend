@@ -131,3 +131,32 @@ func (api *AuthAPI) LogoutUser(w http.ResponseWriter, r *http.Request) {
 
 	*r = *r.WithContext(context.Background())
 }
+
+// ForgotPassword is a placeholder for handling password resets for logged-out users.
+// 🚨 This function is still a work in progress (WIP) and currently lacks security measures,
+// such as email verification or token validation.
+// As a result, it will not be exposed as an endpoint until proper security is implemented.
+func (api *AuthAPI) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var input ForgotPasswordInput
+	if err := util.ReadJSON(w, r, &input); err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	v := util.NewValidator()
+	if input.validateForgotPassword(v); !v.Valid() {
+		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	err := forgorPassword(r.Context(), api.dbpool, &input)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		return
+	}
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "password updated successfully"}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+	}
+}

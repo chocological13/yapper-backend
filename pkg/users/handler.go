@@ -116,37 +116,6 @@ func (h *UserHandler) UpdateUserEmail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ForgotPassword is a placeholder for handling password resets for logged-out users.
-// 🚨 This function is still a work in progress (WIP) and currently lacks security measures,
-// such as email verification or token validation.
-// As a result, it will not be exposed as an endpoint until proper security is implemented.
-func (h *UserHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
-	var input ForgotPasswordRequest
-	err := util.ReadJSON(w, r, &input)
-	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-		return
-	}
-
-	err = h.service.ForgotPassword(r.Context(), input)
-	if err != nil {
-		switch {
-		case errors.Is(err, ErrUserNotFound):
-			apierror.GlobalErrorHandler.NotFoundResponse(w, r)
-		default:
-			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-		}
-		return
-	}
-
-	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "password changed successfully. " +
-		"plese log in with your new credentials."},
-		nil)
-	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-	}
-}
-
 func (h *UserHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var input ResetPasswordRequest
 	err := util.ReadJSON(w, r, &input)
