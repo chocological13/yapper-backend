@@ -15,10 +15,6 @@ var (
 	ErrContextNotFound   = errors.New("could not get current user from context")
 	ErrDuplicateEmail    = errors.New("email already exists")
 	ErrDuplicateUsername = errors.New("username already exists")
-
-	// TODO Future: Add these when implementing email verification
-	// ErrEmailNotVerified  = apperrors.New("email not verified")
-	// ErrTokenExpired      = apperrors.New("verification token expired")
 )
 
 // Tokens related apperrors

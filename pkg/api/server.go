@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/chocological13/yapper-backend/pkg/tokens"
 	"log/slog"
 	"net/http"
 	"os"
@@ -55,7 +56,9 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 		rdb,
 	}
 
-	authAPI := auth.New(app.dbpool, app.rdb)
+	tokenService := tokens.NewTokenService(app.rdb)
+
+	authAPI := auth.New(app.dbpool, app.rdb, tokenService)
 
 	queries := repository.New(app.dbpool)
 	userService := users.NewUserService(queries)
@@ -70,7 +73,8 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 	mux.Handle("POST "+apiVersion+"/logout", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.LogoutUser)))
 
 	// Users routes
-	mux.HandleFunc("PUT "+apiVersion+"/forgot-password", authAPI.ForgotPassword)
+	mux.HandleFunc("POST "+apiVersion+"/forgot-password", authAPI.InitiateForgotPassword)
+	mux.HandleFunc("PATCH "+apiVersion+"/forgot-password", authAPI.CompleteForgotPassword)
 
 	// Testing purposes
 	mux.HandleFunc("GET "+apiVersion+"/users", userHandler.GetUser)
@@ -78,8 +82,11 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 	// Protected routes (auth required)
 
 	// Auth-related users operations
-	mux.Handle("PUT "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.UpdateUserEmail)))
-	mux.Handle("PUT "+apiVersion+"/users/me/reset-password", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
+	mux.Handle("POST "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
+		InitiateUpdateUserEmail)))
+	mux.Handle("PATCH "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
+		CompleteUpdateUserEmail)))
+	mux.Handle("PATCH "+apiVersion+"/users/me/reset-password", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
 		ResetPassword)))
 
 	// Users

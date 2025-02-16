@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/chocological13/yapper-backend/pkg/apperrors"
+	"github.com/chocological13/yapper-backend/pkg/tokens"
 	"net/http"
 	"time"
 
@@ -16,14 +17,16 @@ import (
 )
 
 type AuthAPI struct {
-	dbpool *pgxpool.Pool
-	rdb    *redis.Client
+	dbpool       *pgxpool.Pool
+	rdb          *redis.Client
+	tokenService tokens.Service
 }
 
-func New(dbpool *pgxpool.Pool, rdb *redis.Client) *AuthAPI {
+func New(dbpool *pgxpool.Pool, rdb *redis.Client, tokenService tokens.Service) *AuthAPI {
 	return &AuthAPI{
 		dbpool,
 		rdb,
+		tokenService,
 	}
 }
 
@@ -127,13 +130,39 @@ func (api *AuthAPI) LogoutUser(w http.ResponseWriter, r *http.Request) {
 	*r = *r.WithContext(context.Background())
 }
 
-// ForgotPassword is a placeholder for handling password resets for logged-out users.
-// 🚨 This function is still a work in progress (WIP) and currently lacks security measures,
-// such as email verification or token validation.
-// As a result, it will not be exposed as an endpoint until proper security is implemented.
-func (api *AuthAPI) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+// InitiateForgotPassword handles the first step of the password reset process for logged-out users.
+// It validates the user's request, generates a reset tokens, and (in the future) will send a password reset email.
+// 🚨 This function is still a work in progress (WIP) and currently lacks email-sending functionality.
+// As a result, it will not be fully functional until the email delivery mechanism is implemented.
+func (api *AuthAPI) InitiateForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var input ForgotPasswordRequest
 	if err := util.ReadJSON(w, r, &input); err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	v := util.NewValidator()
+	if input.validateForgotPasswordRequest(v); !v.Valid() {
+		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	tokenString, err := initiateForgorPassword(r.Context(), api.dbpool, api.tokenService, &input)
+	if err != nil {
+		handleErrors(w, r, err)
+		return
+	}
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"token": tokenString}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+	}
+}
+
+func (api *AuthAPI) CompleteForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var input CompleteForgotPassword
+	err := util.ReadJSON(w, r, &input)
+	if err != nil {
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 		return
 	}
@@ -144,7 +173,7 @@ func (api *AuthAPI) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := forgorPassword(r.Context(), api.dbpool, &input)
+	err = completeForgorPassword(r.Context(), api.dbpool, api.tokenService, &input)
 	if err != nil {
 		handleErrors(w, r, err)
 		return
@@ -154,6 +183,7 @@ func (api *AuthAPI) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 	}
+
 }
 
 func (api *AuthAPI) ResetPassword(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +216,10 @@ func (api *AuthAPI) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (api *AuthAPI) UpdateUserEmail(w http.ResponseWriter, r *http.Request) {
+// InitiateUpdateUserEmail starts the email update process by generating a verification token.
+// 🚨 This function is a work in progress (WIP) and currently does not send the verification email.
+// The email sending functionality will be implemented in a future update.
+func (api *AuthAPI) InitiateUpdateUserEmail(w http.ResponseWriter, r *http.Request) {
 	var input UpdateEmailRequest
 	if err := util.ReadJSON(w, r, &input); err != nil {
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
@@ -201,10 +234,34 @@ func (api *AuthAPI) UpdateUserEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := updateEmail(r.Context(), api.dbpool, &input)
+	token, err := initiateUpdateEmail(r.Context(), api.dbpool, api.tokenService, &input)
 	if err != nil {
 		handleErrors(w, r, err)
 		return
+	}
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"token": token}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+	}
+}
+
+func (api *AuthAPI) CompleteUpdateUserEmail(w http.ResponseWriter, r *http.Request) {
+	var input CompleteUpdateEmail
+	if err := util.ReadJSON(w, r, &input); err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	v := util.NewValidator()
+	if input.validateUpdateEmail(v); !v.Valid() {
+		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	err := completeUpdateUserEmail(r.Context(), api.dbpool, api.tokenService, &input)
+	if err != nil {
+		handleErrors(w, r, err)
 	}
 
 	api.LogoutUser(w, r)
@@ -224,6 +281,8 @@ func handleErrors(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, apperrors.ErrContextNotFound):
 		apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
 	case errors.Is(err, apperrors.ErrInvalidCredentials):
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+	case errors.Is(err, apperrors.ErrInvalidToken):
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 	default:
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)

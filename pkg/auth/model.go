@@ -13,7 +13,11 @@ type AuthInput struct {
 }
 
 type ForgotPasswordRequest struct {
-	Email       string `json:"email"`
+	Email string `json:"email"`
+}
+
+type CompleteForgotPassword struct {
+	Token       string `json:"token"`
 	NewPassword string `json:"new_password"`
 }
 
@@ -21,10 +25,13 @@ type ResetPasswordRequest struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`
 }
-
 type UpdateEmailRequest struct {
 	NewEmail string `json:"new_email"`
 	Password string `json:"password"`
+}
+
+type CompleteUpdateEmail struct {
+	Token string `json:"token"`
 }
 
 func (input *AuthInput) validate(isRegistering bool, v *util.Validator) map[string]string {
@@ -43,11 +50,16 @@ func (input *AuthInput) validate(isRegistering bool, v *util.Validator) map[stri
 	return v.Errors
 }
 
-func (input *ForgotPasswordRequest) validateForgotPassword(v *util.Validator) map[string]string {
-	v.Check(input.NewPassword != "", "NewPassword", "Must not be empty")
+func (input *ForgotPasswordRequest) validateForgotPasswordRequest(v *util.Validator) map[string]string {
 	v.Check(input.Email != "", "Email", "Must not be empty")
 	isValidEmail := validateEmail(input.Email)
 	v.Check(isValidEmail, "Email", "Email must be valid")
+	return v.Errors
+}
+
+func (input *CompleteForgotPassword) validateForgotPassword(v *util.Validator) map[string]string {
+	v.Check(input.Token != "", "Token", "Must not be empty")
+	v.Check(input.NewPassword != "", "NewPassword", "Must not be empty")
 
 	return v.Errors
 }
@@ -66,6 +78,11 @@ func (input *UpdateEmailRequest) validateUpdateEmail(ctxEmail string, v *util.Va
 	v.Check(isValidEmail, "Email", "Email must be valid")
 	v.Check(input.Password != "", "Password", "Must not be empty")
 	v.Check(ctxEmail != input.NewEmail, "NewEmail", "Email must not be the same as the current email")
+	return v.Errors
+}
+
+func (input *CompleteUpdateEmail) validateUpdateEmail(v *util.Validator) map[string]string {
+	v.Check(input.Token != "", "Token", "Must not be empty")
 	return v.Errors
 }
 
