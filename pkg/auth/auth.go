@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/chocological13/yapper-backend/pkg/apperrors"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/redis/go-redis/v9"
 	"time"
 
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 )
 
 func register(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *AuthInput) (string, error) {
@@ -27,7 +27,15 @@ func register(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *A
 
 	user, err := repository.New(dbpool).NewUser(ctx, params)
 	if err != nil {
-		return "", err
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.ConstraintName {
+			case "users_email_key":
+				return "", apperrors.ErrDuplicateEmail
+			case "users_username_key":
+				return "", apperrors.ErrDuplicateUsername
+			}
+		}
 	}
 
 	jwt, err := createJWT(user)
@@ -175,19 +183,17 @@ func updateEmail(ctx context.Context, dbpool *pgxpool.Pool, p *UpdateEmailReques
 		return apperrors.ErrInvalidCredentials
 	}
 
-	var exist bool
-	exist, err = checkUserExists(ctx, dbpool, p.NewEmail)
-	if err != nil {
-		return err
-	}
-	if exist {
-		return apperrors.ErrDuplicateEmail
-	}
-
 	_, err = repository.New(dbpool).UpdateEmail(ctx, repository.UpdateEmailParams{
 		UserID: user.UserID,
 		Email:  p.NewEmail,
 	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.ConstraintName != "users_email_key" {
+			return apperrors.ErrDuplicateEmail
+		}
+		return err
+	}
 
 	return err
 }
@@ -207,20 +213,6 @@ func getCurrentUser(ctx context.Context, dbpool *pgxpool.Pool) (*repository.User
 	}
 
 	return &user, nil
-}
-
-func checkUserExists(ctx context.Context, dbpool *pgxpool.Pool, email string) (bool, error) {
-	user, err := repository.New(dbpool).GetUser(ctx, repository.GetUserParams{
-		Email: email,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error checking user existence: %w", err)
-	}
-	return &user != nil, nil
-
 }
 
 func invalidateJwt(ctx context.Context, rdb *redis.Client, email string) error {

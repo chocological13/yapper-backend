@@ -4,9 +4,9 @@ import "errors"
 
 // Auth related apperrors
 var (
-	ErrJWTGenerationError = errors.New("Failed to generate JWT")
-	ErrInvalidCredentials = errors.New("Invalid credentials")
-	ErrTokenNotFound      = errors.New("Token not found")
+	ErrJWTGenerationError = errors.New("failed to generate JWT")
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrTokenNotFound      = errors.New("token not found")
 )
 
 // User related apperrors
@@ -19,4 +19,9 @@ var (
 	// TODO Future: Add these when implementing email verification
 	// ErrEmailNotVerified  = apperrors.New("email not verified")
 	// ErrTokenExpired      = apperrors.New("verification token expired")
+)
+
+// Tokens related apperrors
+var (
+	ErrInvalidToken = errors.New("invalid token")
 )

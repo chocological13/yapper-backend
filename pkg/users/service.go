@@ -21,10 +21,6 @@ type UserService interface {
 
 type userService struct {
 	repository *repository.Queries
-
-	// TODO services to implement for verification purposes
-	// emailService EmailService
-	// tokenService TokenService
 }
 
 func NewUserService(repository *repository.Queries) UserService {
