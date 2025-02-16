@@ -69,7 +69,26 @@ func login(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *Auth
 
 	val, _ := rdb.Get(ctx, fmt.Sprintf("jwt:%s", p.Email)).Result()
 	if val != "" {
-		return val, nil
+		token := fmt.Sprintf("Bearer %s", val)
+		isBlacklisted, _ := rdb.Get(ctx, fmt.Sprintf("jwt:blacklist:%s", token)).Result()
+		if isBlacklisted != "" {
+			val = ""
+		}
+	}
+
+	if val == "" {
+		newJWT := ""
+		newJWT, err = createJWT(user.Email)
+		if err != nil {
+			return "", ErrJWTGenerationError
+		}
+
+		err = rdb.Set(ctx, fmt.Sprintf("jwt:%s", p.Email), newJWT, 7*24*time.Hour).Err()
+		if err != nil {
+			return "", ErrJWTGenerationError
+		}
+
+		return newJWT, nil
 	}
 
 	jwt, err := createJWT(user.Email)
