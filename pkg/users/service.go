@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"github.com/chocological13/yapper-backend/pkg/auth"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/jackc/pgx/v5"
@@ -11,19 +12,14 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-var (
-	ErrUserNotFound      = errors.New("user not found")
-	ErrContextNotFound   = errors.New("could not get current user from context")
-	ErrDuplicateEmail    = errors.New("email already exists")
-	ErrDuplicateUsername = errors.New("username already exists")
-	ErrInvalidPassword   = errors.New("invalid password")
+type UserService interface {
+	GetUser(ctx context.Context, req GetUserRequest) (*User, error)
+	GetCurrentUser(ctx context.Context) (*User, error)
+	UpdateUser(ctx context.Context, req UpdateUserRequest) (*User, error)
+	DeleteUser(ctx context.Context, req DeleteUserRequest) error
+}
 
-	// TODO Future: Add these when implementing email verification
-	// ErrEmailNotVerified  = errors.New("email not verified")
-	// ErrTokenExpired      = errors.New("verification token expired")
-)
-
-type UserService struct {
+type userService struct {
 	repository *repository.Queries
 
 	// TODO services to implement for verification purposes
@@ -31,11 +27,11 @@ type UserService struct {
 	// tokenService TokenService
 }
 
-func NewUserService(repository *repository.Queries) *UserService {
-	return &UserService{repository: repository}
+func NewUserService(repository *repository.Queries) UserService {
+	return &userService{repository: repository}
 }
 
-func (s *UserService) GetUser(ctx context.Context, req GetUserRequest) (*User, error) {
+func (s *userService) GetUser(ctx context.Context, req GetUserRequest) (*User, error) {
 	user, err := s.repository.GetUser(ctx, repository.GetUserParams{
 		UserID:   req.UserID,
 		Username: req.Username,
@@ -44,7 +40,7 @@ func (s *UserService) GetUser(ctx context.Context, req GetUserRequest) (*User, e
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotFound
+			return nil, apperrors.ErrUserNotFound
 		}
 		return nil, fmt.Errorf("getting user: %w", err)
 	}
@@ -52,16 +48,16 @@ func (s *UserService) GetUser(ctx context.Context, req GetUserRequest) (*User, e
 	return mapUserFromDB(user), nil
 }
 
-func (s *UserService) GetCurrentUser(ctx context.Context) (*User, error) {
+func (s *userService) GetCurrentUser(ctx context.Context) (*User, error) {
 	email, ok := ctx.Value("sub").(string)
 	if !ok {
-		return nil, ErrContextNotFound
+		return nil, apperrors.ErrContextNotFound
 	}
 
 	return s.GetUser(ctx, GetUserRequest{Email: email})
 }
 
-func (s *UserService) UpdateUser(ctx context.Context, req UpdateUserRequest) (*User, error) {
+func (s *userService) UpdateUser(ctx context.Context, req UpdateUserRequest) (*User, error) {
 	user, err := s.GetCurrentUser(ctx)
 	if err != nil {
 		return nil, err
@@ -74,7 +70,7 @@ func (s *UserService) UpdateUser(ctx context.Context, req UpdateUserRequest) (*U
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.ConstraintName == "users_username_key" {
-			return nil, ErrDuplicateUsername
+			return nil, apperrors.ErrDuplicateUsername
 		}
 		return nil, fmt.Errorf("updating user: %w", err)
 	}
@@ -82,72 +78,7 @@ func (s *UserService) UpdateUser(ctx context.Context, req UpdateUserRequest) (*U
 	return mapUserFromDB(updatedUser), err
 }
 
-// TODO: Complete implementation of email verification flow
-// 1. Make service to generate verification token
-// 2. Store new email in the token (if with jwt) or with
-// 3. Send verification email
-// 4. Store pending email change
-// 5. Confirm email, verify token
-// 6. Update user
-
-// UpdateEmail currently provides a skeleton implementation of the overall update email
-// functionality. TODO : complete after mailer service is established
-func (s *UserService) UpdateEmail(ctx context.Context, req UpdateEmailRequest) (*User, error) {
-	user, err := s.GetCurrentUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Verify current password as a layer of security for now
-	match, _, err := auth.VerifyPassword(req.Password, user.Password)
-	if err != nil {
-		return nil, fmt.Errorf("verifying password: %w", err)
-	}
-	if !match {
-		return nil, ErrInvalidPassword
-	}
-
-	updatedUser, err := s.repository.UpdateEmail(ctx, repository.UpdateEmailParams{
-		UserID: user.ID,
-		Email:  req.NewEmail,
-	})
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.ConstraintName == "users_email_key" {
-			return nil, ErrDuplicateEmail
-		}
-		return nil, fmt.Errorf("updating email: %w", err)
-	}
-
-	return mapUserFromDB(updatedUser), nil
-}
-
-// ResetPassword currently provides a skeleton implementation of the overall forgot password functionality.
-// This is for logged-in users who want to update their passwords
-func (s *UserService) ResetPassword(ctx context.Context, req ResetPasswordRequest) error {
-	user, err := s.GetCurrentUser(ctx)
-	if err != nil {
-		return err
-	}
-
-	match, _, err := auth.VerifyPassword(req.CurrentPassword, user.Password)
-	if !match {
-		return ErrInvalidPassword
-	}
-
-	hashedPassword, err := auth.HashPassword(req.NewPassword)
-	if err != nil {
-		return fmt.Errorf("hashing password: %w", err)
-	}
-
-	err = s.repository.UpdatePassword(ctx, repository.UpdatePasswordParams{
-		UserID:   user.ID,
-		Password: hashedPassword,
-	})
-	return err
-}
-
-func (s *UserService) DeleteUser(ctx context.Context, req DeleteUserRequest) error {
+func (s *userService) DeleteUser(ctx context.Context, req DeleteUserRequest) error {
 	// TODO : add more confirmation with email confirmation
 
 	user, err := s.GetCurrentUser(ctx)
@@ -157,7 +88,7 @@ func (s *UserService) DeleteUser(ctx context.Context, req DeleteUserRequest) err
 
 	match, _, err := auth.VerifyPassword(req.Password, user.Password)
 	if !match {
-		return ErrInvalidPassword
+		return apperrors.ErrInvalidCredentials
 	}
 
 	err = s.repository.DeleteUser(ctx, user.ID)

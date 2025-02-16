@@ -70,17 +70,21 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 	mux.Handle("POST "+apiVersion+"/logout", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.LogoutUser)))
 
 	// Users routes
-	mux.HandleFunc("PUT "+apiVersion+"/users/me/forgot-password", authAPI.ForgotPassword)
+	mux.HandleFunc("PUT "+apiVersion+"/forgot-password", authAPI.ForgotPassword)
 
 	// Testing purposes
 	mux.HandleFunc("GET "+apiVersion+"/users", userHandler.GetUser)
 
 	// Protected routes (auth required)
+
+	// Auth-related users operations
+	mux.Handle("PUT "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.UpdateUserEmail)))
+	mux.Handle("PUT "+apiVersion+"/users/me/reset-password", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
+		ResetPassword)))
+
 	// Users
 	mux.Handle("GET "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.GetCurrentUser)))
 	mux.Handle("PUT "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.UpdateUser)))
-	mux.Handle("PUT "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.UpdateUserEmail)))
-	mux.Handle("PUT "+apiVersion+"/users/me/reset-password", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.ResetPassword)))
 	mux.Handle("DELETE "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.DeleteUser)))
 
 	// Add future middleware here

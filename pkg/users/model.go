@@ -26,18 +26,6 @@ type UpdateUserRequest struct {
 	Username string `json:"username,omitempty"`
 }
 
-type UpdateEmailRequest struct {
-	NewEmail string `json:"new_email"`
-
-	// For password confirmation
-	Password string `json:"password"`
-}
-
-type ResetPasswordRequest struct {
-	CurrentPassword string `json:"current_password"`
-	NewPassword     string `json:"new_password"`
-}
-
 type DeleteUserRequest struct {
 	Password string `json:"password"`
 }
