@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"log/slog"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"github.com/chocological13/yapper-backend/pkg/database"
 	"github.com/joho/godotenv"
 )
+
+var ctx = context.Background()
 
 func main() {
 	err := godotenv.Load()
@@ -20,8 +23,11 @@ func main() {
 
 	dbpool := database.ConnectDB(os.Getenv("DATABASE_URL"))
 	defer dbpool.Close()
-
 	logger.Info("database connection pool established")
 
-	api.StartServer(dbpool)
+	rdb := database.ConnectRedis()
+
+	logger.Info("redis connection established")
+
+	api.StartServer(dbpool, rdb)
 }
