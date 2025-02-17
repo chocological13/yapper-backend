@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/chocological13/yapper-backend/pkg/apperrors"
-	"github.com/chocological13/yapper-backend/pkg/tokens"
 	"net/http"
 	"time"
 
@@ -17,16 +16,14 @@ import (
 )
 
 type AuthAPI struct {
-	dbpool       *pgxpool.Pool
-	rdb          *redis.Client
-	tokenService tokens.Service
+	dbpool *pgxpool.Pool
+	rdb    *redis.Client
 }
 
-func New(dbpool *pgxpool.Pool, rdb *redis.Client, tokenService tokens.Service) *AuthAPI {
+func New(dbpool *pgxpool.Pool, rdb *redis.Client) *AuthAPI {
 	return &AuthAPI{
 		dbpool,
 		rdb,
-		tokenService,
 	}
 }
 
@@ -147,7 +144,7 @@ func (api *AuthAPI) InitiateForgotPassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tokenString, err := initiateForgorPassword(r.Context(), api.dbpool, api.tokenService, &input)
+	tokenString, err := initiateForgorPassword(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
 		handleErrors(w, r, err)
 		return
@@ -173,7 +170,7 @@ func (api *AuthAPI) CompleteForgotPassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err = completeForgorPassword(r.Context(), api.dbpool, api.tokenService, &input)
+	err = completeForgorPassword(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
 		handleErrors(w, r, err)
 		return
@@ -234,7 +231,7 @@ func (api *AuthAPI) InitiateUpdateUserEmail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	token, err := initiateUpdateEmail(r.Context(), api.dbpool, api.tokenService, &input)
+	token, err := initiateUpdateEmail(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
 		handleErrors(w, r, err)
 		return
@@ -259,7 +256,7 @@ func (api *AuthAPI) CompleteUpdateUserEmail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err := completeUpdateUserEmail(r.Context(), api.dbpool, api.tokenService, &input)
+	err := completeUpdateUserEmail(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
 		handleErrors(w, r, err)
 	}
@@ -282,7 +279,7 @@ func handleErrors(w http.ResponseWriter, r *http.Request, err error) {
 		apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
 	case errors.Is(err, apperrors.ErrInvalidCredentials):
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
-	case errors.Is(err, apperrors.ErrInvalidToken):
+	case errors.Is(err, ErrInvalidToken):
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 	default:
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)

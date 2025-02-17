@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/chocological13/yapper-backend/pkg/tokens"
 	"log/slog"
 	"net/http"
 	"os"
@@ -56,9 +55,7 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 		rdb,
 	}
 
-	tokenService := tokens.NewTokenService(app.rdb)
-
-	authAPI := auth.New(app.dbpool, app.rdb, tokenService)
+	authAPI := auth.New(app.dbpool, app.rdb)
 
 	queries := repository.New(app.dbpool)
 	userService := users.NewUserService(queries)

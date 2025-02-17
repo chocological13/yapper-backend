@@ -1,15 +1,34 @@
-package tokens
+package auth
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
-	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"github.com/redis/go-redis/v9"
 	"strings"
 	"time"
 )
+
+var (
+	ErrInvalidToken = errors.New("invalid token")
+)
+
+type TokenType string
+
+const (
+	ForgotPassword TokenType = "forgot_password"
+	EmailChange    TokenType = "email_change"
+)
+
+type TokenDetails struct {
+	Token     string
+	Type      TokenType
+	UserEmail string
+	ExtraData string
+	ExpiresAt time.Time
+}
 
 const (
 	TokenLength          = 32 // 32 bytes = 64 hex characters
@@ -17,23 +36,7 @@ const (
 	EmailChangeExpiry    = 60 * time.Minute
 )
 
-type Service interface {
-	CreateToken(ctx context.Context, tokenType TokenType, userEmail string, extraData string) (*TokenDetails, error)
-	ValidateToken(ctx context.Context, tokenType TokenType, token string) (*TokenDetails, error)
-	BlacklistToken(ctx context.Context, tokenType TokenType, token string) error
-}
-
-type tokenService struct {
-	rdb *redis.Client
-}
-
-func NewTokenService(rdb *redis.Client) Service {
-	return &tokenService{
-		rdb: rdb,
-	}
-}
-
-func (s *tokenService) generateToken() (string, error) {
+func generateToken() (string, error) {
 	bytes := make([]byte, TokenLength)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", fmt.Errorf("generating tokens: %w", err)
@@ -41,10 +44,10 @@ func (s *tokenService) generateToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-func (s *tokenService) CreateToken(ctx context.Context, tokenType TokenType, userEmail string,
+func CreateToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, userEmail string,
 	extraData string) (*TokenDetails, error) {
 
-	token, err := s.generateToken()
+	token, err := generateToken()
 	if err != nil {
 		return nil, fmt.Errorf("generating tokens: %w", err)
 	}
@@ -71,7 +74,7 @@ func (s *tokenService) CreateToken(ctx context.Context, tokenType TokenType, use
 	key := fmt.Sprintf("%s:%s", tokenType, token)
 	value := fmt.Sprintf("%s:%s", userEmail, extraData)
 
-	err = s.rdb.Set(ctx, key, value, expiry).Err()
+	err = rdb.Set(ctx, key, value, expiry).Err()
 	if err != nil {
 		return nil, fmt.Errorf("saving tokens: %w", err)
 	}
@@ -79,13 +82,13 @@ func (s *tokenService) CreateToken(ctx context.Context, tokenType TokenType, use
 	return details, nil
 }
 
-func (s *tokenService) ValidateToken(ctx context.Context, tokenType TokenType, token string) (*TokenDetails, error) {
-	if valid := s.isTokenValid(ctx, tokenType, token); !valid {
-		return nil, apperrors.ErrInvalidToken
+func ValidateToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, token string) (*TokenDetails, error) {
+	if valid := isTokenValid(ctx, rdb, tokenType, token); !valid {
+		return nil, ErrInvalidToken
 	}
 
 	key := fmt.Sprintf("%s:%s", tokenType, token)
-	value, err := s.rdb.Get(ctx, key).Result()
+	value, err := rdb.Get(ctx, key).Result()
 	if err != nil {
 		return nil, fmt.Errorf("getting tokens: %w", err)
 	}
@@ -106,18 +109,20 @@ func (s *tokenService) ValidateToken(ctx context.Context, tokenType TokenType, t
 
 }
 
-func (s *tokenService) BlacklistToken(ctx context.Context, tokenType TokenType, token string) error {
-	key := fmt.Sprintf("%s:%s:%s", tokenType, "blacklist", token)
-	err := s.rdb.Set(ctx, key, true, 1*time.Hour).Err()
+func BlacklistToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, token string) error {
+	blacklistkey := fmt.Sprintf("%s:%s:%s", tokenType, "blacklist", token)
+	err := rdb.Set(ctx, blacklistkey, true, 1*time.Hour).Err()
 	if err != nil {
 		return fmt.Errorf("saving blacklisted tokens: %w", err)
 	}
-	return nil
+
+	key := fmt.Sprintf("%s:%s", tokenType, token)
+	return rdb.Del(ctx, key).Err()
 }
 
-func (s *tokenService) isTokenValid(ctx context.Context, tokenType TokenType, token string) bool {
+func isTokenValid(ctx context.Context, rdb *redis.Client, tokenType TokenType, token string) bool {
 	blacklistKey := fmt.Sprintf("%s:%s:%s", tokenType, "blacklist", token)
-	exists := s.rdb.Exists(ctx, blacklistKey).Val()
+	exists := rdb.Exists(ctx, blacklistKey).Val()
 	if exists != 0 {
 		return false
 	}

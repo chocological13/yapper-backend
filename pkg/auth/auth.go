@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/chocological13/yapper-backend/pkg/apperrors"
-	"github.com/chocological13/yapper-backend/pkg/tokens"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/redis/go-redis/v9"
@@ -116,7 +115,7 @@ func login(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *Auth
 }
 
 // initiateForgorPassword currently handles the initiation of password reset process for logged-out users.
-func initiateForgorPassword(ctx context.Context, dbpool *pgxpool.Pool, tokenService tokens.Service,
+func initiateForgorPassword(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client,
 	p *ForgotPasswordRequest) (string, error) {
 	exists, err := checkUserExists(ctx, dbpool, p.Email)
 	if err != nil {
@@ -126,7 +125,7 @@ func initiateForgorPassword(ctx context.Context, dbpool *pgxpool.Pool, tokenServ
 		return "", apperrors.ErrUserNotFound
 	}
 
-	details, err := tokenService.CreateToken(ctx, tokens.ForgotPassword, p.Email, "")
+	details, err := CreateToken(ctx, rdb, ForgotPassword, p.Email, "")
 	if err != nil {
 		return "", err
 	}
@@ -135,8 +134,8 @@ func initiateForgorPassword(ctx context.Context, dbpool *pgxpool.Pool, tokenServ
 	return details.Token, nil
 }
 
-func completeForgorPassword(ctx context.Context, dbpool *pgxpool.Pool, tokenService tokens.Service, p *CompleteForgotPassword) error {
-	details, err := tokenService.ValidateToken(ctx, tokens.ForgotPassword, p.Token)
+func completeForgorPassword(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *CompleteForgotPassword) error {
+	details, err := ValidateToken(ctx, rdb, ForgotPassword, p.Token)
 	if err != nil {
 		return err
 	}
@@ -162,7 +161,7 @@ func completeForgorPassword(ctx context.Context, dbpool *pgxpool.Pool, tokenServ
 	})
 
 	// blacklist token in the end
-	return tokenService.BlacklistToken(ctx, tokens.ForgotPassword, p.Token)
+	return BlacklistToken(ctx, rdb, ForgotPassword, p.Token)
 }
 
 // resetPassword currently provides a skeleton implementation of the overall forgot password functionality.
@@ -198,7 +197,7 @@ func resetPassword(ctx context.Context, dbpool *pgxpool.Pool, p *ResetPasswordRe
 	return nil
 }
 
-func initiateUpdateEmail(ctx context.Context, dbpool *pgxpool.Pool, tokenService tokens.Service,
+func initiateUpdateEmail(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client,
 	p *UpdateEmailRequest) (string, error) {
 	user, err := getCurrentUser(ctx, dbpool)
 	if err != nil {
@@ -222,7 +221,7 @@ func initiateUpdateEmail(ctx context.Context, dbpool *pgxpool.Pool, tokenService
 		return "", apperrors.ErrInvalidCredentials
 	}
 
-	tokenDetails, err := tokenService.CreateToken(ctx, tokens.EmailChange, user.Email, p.NewEmail)
+	tokenDetails, err := CreateToken(ctx, rdb, EmailChange, user.Email, p.NewEmail)
 	if err != nil {
 		return "", err
 	}
@@ -232,8 +231,8 @@ func initiateUpdateEmail(ctx context.Context, dbpool *pgxpool.Pool, tokenService
 	return tokenDetails.Token, nil
 }
 
-func completeUpdateUserEmail(ctx context.Context, dbpool *pgxpool.Pool, tokenService tokens.Service, p *CompleteUpdateEmail) error {
-	tokenDetails, err := tokenService.ValidateToken(ctx, tokens.EmailChange, p.Token)
+func completeUpdateUserEmail(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *CompleteUpdateEmail) error {
+	tokenDetails, err := ValidateToken(ctx, rdb, EmailChange, p.Token)
 	if err != nil {
 		return err
 	}
@@ -260,7 +259,7 @@ func completeUpdateUserEmail(ctx context.Context, dbpool *pgxpool.Pool, tokenSer
 		return err
 	}
 
-	return tokenService.BlacklistToken(ctx, tokens.EmailChange, tokenDetails.Token)
+	return BlacklistToken(ctx, rdb, EmailChange, tokenDetails.Token)
 }
 
 func getCurrentUser(ctx context.Context, dbpool *pgxpool.Pool) (*repository.User, error) {
