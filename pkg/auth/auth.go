@@ -15,6 +15,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var (
+	ErrJWTGenerationError = errors.New("failed to generate JWT")
+	ErrTokenNotFound      = errors.New("token not found")
+)
+
 func register(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *AuthInput) (string, error) {
 	passwordHash, err := HashPassword(p.Password)
 	if err != nil {
@@ -42,12 +47,12 @@ func register(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *A
 
 	jwt, err := createJWT(user)
 	if err != nil {
-		return "", apperrors.ErrJWTGenerationError
+		return "", ErrJWTGenerationError
 	}
 
 	err = rdb.Set(ctx, fmt.Sprintf("jwt:%s", p.Email), jwt, 7*24*time.Hour).Err()
 	if err != nil {
-		return "", apperrors.ErrJWTGenerationError
+		return "", ErrJWTGenerationError
 	}
 
 	return jwt, nil
@@ -86,12 +91,12 @@ func login(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *Auth
 		newJWT := ""
 		newJWT, err = createJWT(user.Email)
 		if err != nil {
-			return "", apperrors.ErrJWTGenerationError
+			return "", ErrJWTGenerationError
 		}
 
 		err = rdb.Set(ctx, fmt.Sprintf("jwt:%s", p.Email), newJWT, 7*24*time.Hour).Err()
 		if err != nil {
-			return "", apperrors.ErrJWTGenerationError
+			return "", ErrJWTGenerationError
 		}
 
 		return newJWT, nil
@@ -99,12 +104,12 @@ func login(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *Auth
 
 	jwt, err := createJWT(user.Email)
 	if err != nil {
-		return "", apperrors.ErrJWTGenerationError
+		return "", ErrJWTGenerationError
 	}
 
 	err = rdb.Set(ctx, fmt.Sprintf("jwt:%s", p.Email), jwt, 7*24*time.Hour).Err()
 	if err != nil {
-		return "", apperrors.ErrJWTGenerationError
+		return "", ErrJWTGenerationError
 	}
 
 	return jwt, nil

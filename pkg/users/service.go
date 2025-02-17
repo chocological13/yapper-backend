@@ -12,6 +12,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+var (
+	ErrUserNotFound      = errors.New("user not found")
+	ErrDuplicateEmail    = errors.New("email already exists")
+	ErrDuplicateUsername = errors.New("username already exists")
+)
+
 type UserService interface {
 	GetUser(ctx context.Context, req GetUserRequest) (*User, error)
 	GetCurrentUser(ctx context.Context) (*User, error)
