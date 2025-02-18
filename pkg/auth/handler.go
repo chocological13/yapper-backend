@@ -259,6 +259,7 @@ func (api *AuthAPI) CompleteUpdateUserEmail(w http.ResponseWriter, r *http.Reque
 	err := completeUpdateUserEmail(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
 		handleErrors(w, r, err)
+		return
 	}
 
 	api.LogoutUser(w, r)

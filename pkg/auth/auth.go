@@ -135,13 +135,13 @@ func initiateForgorPassword(ctx context.Context, dbpool *pgxpool.Pool, rdb *redi
 }
 
 func completeForgorPassword(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *CompleteForgotPassword) error {
-	details, err := ValidateToken(ctx, rdb, ForgotPassword, p.Token)
+	tokenDetails, err := ValidateToken(ctx, rdb, ForgotPassword, p.Token)
 	if err != nil {
 		return err
 	}
 
 	user, err := repository.New(dbpool).GetUser(ctx, repository.GetUserParams{
-		Email: details.UserEmail,
+		Email: tokenDetails.UserEmail,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -160,8 +160,8 @@ func completeForgorPassword(ctx context.Context, dbpool *pgxpool.Pool, rdb *redi
 		Password: hashedPassword,
 	})
 
-	// blacklist token in the end
-	return BlacklistToken(ctx, rdb, ForgotPassword, p.Token)
+	// delete token
+	return DeleteToken(ctx, rdb, ForgotPassword, tokenDetails.Token, tokenDetails.UserEmail)
 }
 
 // resetPassword currently provides a skeleton implementation of the overall forgot password functionality.
@@ -259,7 +259,8 @@ func completeUpdateUserEmail(ctx context.Context, dbpool *pgxpool.Pool, rdb *red
 		return err
 	}
 
-	return BlacklistToken(ctx, rdb, EmailChange, tokenDetails.Token)
+	// delete token
+	return DeleteToken(ctx, rdb, EmailChange, tokenDetails.Token, tokenDetails.UserEmail)
 }
 
 func getCurrentUser(ctx context.Context, dbpool *pgxpool.Pool) (*repository.User, error) {

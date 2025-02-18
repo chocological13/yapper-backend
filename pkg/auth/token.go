@@ -44,8 +44,29 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
+func getExistingToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, userEmail string) (string, error) {
+	userKey := fmt.Sprintf("%s:%s", tokenType, userEmail)
+	existingToken, err := rdb.Get(ctx, userKey).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", nil
+		}
+		return "", err
+	}
+	return existingToken, nil
+}
+
 func CreateToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, userEmail string,
 	extraData string) (*TokenDetails, error) {
+
+	// Check for existing token first
+	existingToken, err := getExistingToken(ctx, rdb, tokenType, userEmail)
+	if err != nil {
+		return nil, err
+	}
+	if existingToken != "" {
+		return ValidateToken(ctx, rdb, tokenType, existingToken)
+	}
 
 	token, err := generateToken()
 	if err != nil {
@@ -70,7 +91,7 @@ func CreateToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, us
 		ExpiresAt: expiresAt,
 	}
 
-	// Store tokens in redis
+	// Store token in redis
 	key := fmt.Sprintf("%s:%s", tokenType, token)
 	value := fmt.Sprintf("%s:%s", userEmail, extraData)
 
@@ -79,14 +100,17 @@ func CreateToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, us
 		return nil, fmt.Errorf("saving tokens: %w", err)
 	}
 
+	// Store token for initial user lookup
+	userKey := fmt.Sprintf("%s:%s", tokenType, userEmail)
+	err = rdb.Set(ctx, userKey, token, expiry).Err()
+	if err != nil {
+		return nil, fmt.Errorf("saving tokens: %w", err)
+	}
+
 	return details, nil
 }
 
 func ValidateToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, token string) (*TokenDetails, error) {
-	if valid := isTokenValid(ctx, rdb, tokenType, token); !valid {
-		return nil, ErrInvalidToken
-	}
-
 	key := fmt.Sprintf("%s:%s", tokenType, token)
 	value, err := rdb.Get(ctx, key).Result()
 	if err != nil {
@@ -109,22 +133,16 @@ func ValidateToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, 
 
 }
 
-func BlacklistToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, token string) error {
-	blacklistkey := fmt.Sprintf("%s:%s:%s", tokenType, "blacklist", token)
-	err := rdb.Set(ctx, blacklistkey, true, 1*time.Hour).Err()
-	if err != nil {
-		return fmt.Errorf("saving blacklisted tokens: %w", err)
-	}
-
+func DeleteToken(ctx context.Context, rdb *redis.Client, tokenType TokenType, token, userEmail string) error {
 	key := fmt.Sprintf("%s:%s", tokenType, token)
-	return rdb.Del(ctx, key).Err()
-}
-
-func isTokenValid(ctx context.Context, rdb *redis.Client, tokenType TokenType, token string) bool {
-	blacklistKey := fmt.Sprintf("%s:%s:%s", tokenType, "blacklist", token)
-	exists := rdb.Exists(ctx, blacklistKey).Val()
-	if exists != 0 {
-		return false
+	err := rdb.Del(ctx, key).Err()
+	if err != nil {
+		return fmt.Errorf("deleting tokens: %w", err)
 	}
-	return true
+	userKey := fmt.Sprintf("%s:%s", tokenType, userEmail)
+	err = rdb.Del(ctx, userKey).Err()
+	if err != nil {
+		return fmt.Errorf("deleting tokens: %w", err)
+	}
+	return nil
 }
