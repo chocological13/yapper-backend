@@ -29,10 +29,14 @@ type User struct {
 }
 
 type Yap struct {
-	YapID     pgtype.UUID
-	UserID    pgtype.UUID
-	Content   string
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
-	DeletedAt pgtype.Timestamptz
+	YapID         pgtype.UUID
+	UserID        pgtype.UUID
+	Content       string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+	DeletedAt     pgtype.Timestamptz
+	Media         []byte
+	Hashtags      []string
+	Mentions      []string
+	LocationPoint interface{}
 }

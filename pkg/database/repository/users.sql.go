@@ -116,6 +116,7 @@ func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) 
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
 SET username = COALESCE($2, username),
+    -- Add other non-sensitive fields here as needed if the users table grows
     updated_at = now()
 WHERE user_id = $1 AND deleted_at IS NULL
 RETURNING user_id, username, email, password, created_at, updated_at, deleted_at
