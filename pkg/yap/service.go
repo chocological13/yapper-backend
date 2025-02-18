@@ -68,7 +68,8 @@ func (s *yapService) CreateYap(ctx context.Context, req CreateYapRequest) (*YapR
 		return nil, err
 	}
 
-	return mapYapToResponse(yap)
+	yapRow := ConvertCreateYapRow(yap)
+	return mapYapToResponse(yapRow), nil
 }
 
 func (s *yapService) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapResponse, error) {
@@ -80,12 +81,8 @@ func (s *yapService) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapRes
 		return nil, err
 	}
 
-	return &YapResponse{
-		YapID:     yap.YapID,
-		UserID:    yap.UserID,
-		Content:   yap.Content,
-		CreatedAt: yap.CreatedAt,
-	}, nil
+	yapRow := ConvertGetYapByIDRow(yap)
+	return mapYapToResponse(yapRow), nil
 }
 
 // ListYapsByUser fetches yaps made by a user
@@ -122,12 +119,8 @@ func (s *yapService) ListYapsByUser(ctx context.Context, req ListYapsRequest) ([
 
 	yapResponses := make([]*YapResponse, len(yaps))
 	for i, yap := range yaps {
-		yapResponses[i] = &YapResponse{
-			YapID:     yap.YapID,
-			UserID:    yap.UserID,
-			Content:   yap.Content,
-			CreatedAt: yap.CreatedAt,
-		}
+		yapRow := ConvertGetListYapsByUserRow(yap)
+		yapResponses[i] = mapYapToResponse(yapRow)
 	}
 
 	return yapResponses, nil
@@ -142,36 +135,22 @@ func (s *yapService) UpdateYap(ctx context.Context, req UpdateYapRequest) (*YapR
 		return nil, err
 	}
 
-	params := repository.UpdateYapParams{
-		YapID:   req.YapID,
-		Content: req.Content,
-		UserID:  user.ID,
-	}
-
-	yap, err := s.queries.GetYapByID(ctx, req.YapID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrYapNotFound
-		}
+	if _, err = s.validateYap(ctx, req.YapID, user.ID); err != nil {
 		return nil, err
 	}
 
-	// check if yap actually belongs to the user
-	if yap.UserID != user.ID {
-		return nil, ErrUnauthorizedYapper
-	}
-
-	yap, err = s.queries.UpdateYap(ctx, params)
+	params, err := s.buildUpdateParams(req, user.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	return &YapResponse{
-		YapID:     yap.YapID,
-		UserID:    yap.UserID,
-		Content:   yap.Content,
-		CreatedAt: yap.CreatedAt,
-	}, nil
+	editedYap, err := s.queries.UpdateYap(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	yapRow := ConvertUpdateYapRow(editedYap)
+	return mapYapToResponse(yapRow), nil
 }
 
 func (s *yapService) DeleteYap(ctx context.Context, yapID pgtype.UUID) error {
@@ -207,7 +186,8 @@ func extractHashtagsAndMentions(content string) ([]string, []string) {
 	hashtagRegex := regexp.MustCompile(`#(\w+)`)
 	mentionRegex := regexp.MustCompile(`@(\w+)`)
 
-	var hashtags, mentions []string
+	hashtags := []string{}
+	mentions := []string{}
 
 	for _, match := range hashtagRegex.FindAllStringSubmatch(content, -1) {
 		if len(match) > 1 {
@@ -224,28 +204,88 @@ func extractHashtagsAndMentions(content string) ([]string, []string) {
 	return hashtags, mentions
 }
 
-func mapYapToResponse(yap repository.CreateYapRow) (*YapResponse, error) {
+func mapYapToResponse(yap YapRow) *YapResponse {
 	var media []MediaItem
-	if err := json.Unmarshal(yap.Media, &media); err != nil {
-		return nil, err
+	if err := json.Unmarshal(yap.GetMedia(), &media); err != nil {
+		return nil
 	}
 
 	var location *Location
-	if yap.Longitude != nil && yap.Latitude != nil {
+	if yap.GetLongitude() != nil && yap.GetLatitude() != nil {
 		location = &Location{
-			Latitude:  yap.Latitude.(float64),
-			Longitude: yap.Longitude.(float64),
+			Latitude:  yap.GetLatitude().(float64),
+			Longitude: yap.GetLongitude().(float64),
 		}
 	}
 
 	return &YapResponse{
-		YapID:     yap.YapID,
-		UserID:    yap.UserID,
-		Content:   yap.Content,
+		YapID:     yap.GetYapID(),
+		UserID:    yap.GetUserID(),
+		Content:   yap.GetContent(),
 		Media:     media,
-		Hashtags:  yap.Hashtags,
-		Mentions:  yap.Mentions,
+		Hashtags:  yap.GetHashtags(),
+		Mentions:  yap.GetMentions(),
 		Location:  location,
-		CreatedAt: yap.CreatedAt,
-	}, nil
+		CreatedAt: yap.GetCreatedAt(),
+		EditedAt:  yap.GetUpdatedAt(),
+	}
+}
+
+func (s *yapService) buildUpdateParams(req UpdateYapRequest, userID pgtype.UUID) (repository.UpdateYapParams, error) {
+	params := repository.UpdateYapParams{
+		YapID:  req.YapID,
+		UserID: userID,
+	}
+
+	if req.Content != nil {
+		params.Column2 = *req.Content
+		if *req.Content != "" {
+			hashtags, mentions := extractHashtagsAndMentions(*req.Content)
+			params.Column4 = hashtags
+			params.Column5 = mentions
+		} else {
+			params.Column4 = []string{}
+			params.Column5 = []string{}
+		}
+	}
+
+	var err error
+	if req.Media != nil {
+		var mediaJSON []byte
+		mediaJSON, err = json.Marshal(req.Media)
+		if err != nil {
+			return repository.UpdateYapParams{}, err
+		}
+		params.Column3 = mediaJSON
+	}
+
+	if req.Location != nil {
+		if req.Location.Latitude == 0 && req.Location.Longitude == 0 {
+			params.Column8 = true
+		} else {
+			params.Column6 = req.Location.Latitude
+			params.Column7 = req.Location.Longitude
+			params.Column8 = false
+		}
+	} else {
+		params.Column8 = false
+	}
+
+	return params, nil
+}
+
+func (s *yapService) validateYap(ctx context.Context, yapID, userID pgtype.UUID) (bool, error) {
+	yap, err := s.queries.GetYapByID(ctx, yapID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, ErrYapNotFound
+		}
+		return false, err
+	}
+
+	if yap.UserID != userID {
+		return false, ErrUnauthorizedYapper
+	}
+
+	return true, nil
 }

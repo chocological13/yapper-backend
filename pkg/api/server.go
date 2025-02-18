@@ -88,7 +88,7 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 	mux.HandleFunc("GET /api/v1/yaps", yapHandler.ListYapsByUser)
 	mux.Handle("GET /api/v1/yaps/me", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.ListMyYaps)))
 	mux.Handle("POST /api/v1/yaps", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.CreateYap)))
-	mux.Handle("PUT /api/v1/yaps/{id}", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.UpdateYap)))
+	mux.Handle("PATCH /api/v1/yaps/{id}", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.UpdateYap)))
 	mux.Handle("DELETE /api/v1/yaps", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.DeleteYap)))
 
 	// Auth-related users operations

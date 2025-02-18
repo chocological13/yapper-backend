@@ -36,7 +36,8 @@ RETURNING
   mentions,
   ST_X(location_point::geometry) as longitude,
   ST_Y(location_point::geometry) as latitude,
-  created_at
+  created_at,
+  updated_at
 `
 
 type CreateYapParams struct {
@@ -59,6 +60,7 @@ type CreateYapRow struct {
 	Longitude interface{}
 	Latitude  interface{}
 	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }
 
 func (q *Queries) CreateYap(ctx context.Context, arg CreateYapParams) (CreateYapRow, error) {
@@ -82,6 +84,7 @@ func (q *Queries) CreateYap(ctx context.Context, arg CreateYapParams) (CreateYap
 		&i.Longitude,
 		&i.Latitude,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -105,31 +108,62 @@ func (q *Queries) DeleteYap(ctx context.Context, arg DeleteYapParams) error {
 }
 
 const getYapByID = `-- name: GetYapByID :one
-SELECT yap_id, user_id, content, created_at, updated_at, deleted_at, media, hashtags, mentions, location_point
+SELECT yap_id,
+       user_id,
+       content,
+       media,
+       hashtags,
+       mentions,
+       ST_X(location_point::geometry) as longitude,
+       ST_Y(location_point::geometry) as latitude,
+       created_at,
+       updated_at
 FROM yaps
 WHERE yap_id = $1 AND deleted_at IS NULL
 `
 
-func (q *Queries) GetYapByID(ctx context.Context, yapID pgtype.UUID) (Yap, error) {
+type GetYapByIDRow struct {
+	YapID     pgtype.UUID
+	UserID    pgtype.UUID
+	Content   string
+	Media     []byte
+	Hashtags  []string
+	Mentions  []string
+	Longitude interface{}
+	Latitude  interface{}
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetYapByID(ctx context.Context, yapID pgtype.UUID) (GetYapByIDRow, error) {
 	row := q.db.QueryRow(ctx, getYapByID, yapID)
-	var i Yap
+	var i GetYapByIDRow
 	err := row.Scan(
 		&i.YapID,
 		&i.UserID,
 		&i.Content,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
 		&i.Media,
 		&i.Hashtags,
 		&i.Mentions,
-		&i.LocationPoint,
+		&i.Longitude,
+		&i.Latitude,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const listYapsByUser = `-- name: ListYapsByUser :many
-SELECT yap_id, user_id, content, created_at, updated_at, deleted_at, media, hashtags, mentions, location_point
+SELECT yap_id,
+       user_id,
+       content,
+       media,
+       hashtags,
+       mentions,
+       ST_X(location_point::geometry) as longitude,
+       ST_Y(location_point::geometry) as latitude,
+       created_at,
+       updated_at
 FROM yaps
 WHERE user_id = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC
@@ -142,26 +176,39 @@ type ListYapsByUserParams struct {
 	Column3 interface{}
 }
 
-func (q *Queries) ListYapsByUser(ctx context.Context, arg ListYapsByUserParams) ([]Yap, error) {
+type ListYapsByUserRow struct {
+	YapID     pgtype.UUID
+	UserID    pgtype.UUID
+	Content   string
+	Media     []byte
+	Hashtags  []string
+	Mentions  []string
+	Longitude interface{}
+	Latitude  interface{}
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) ListYapsByUser(ctx context.Context, arg ListYapsByUserParams) ([]ListYapsByUserRow, error) {
 	rows, err := q.db.Query(ctx, listYapsByUser, arg.UserID, arg.Column2, arg.Column3)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Yap
+	var items []ListYapsByUserRow
 	for rows.Next() {
-		var i Yap
+		var i ListYapsByUserRow
 		if err := rows.Scan(
 			&i.YapID,
 			&i.UserID,
 			&i.Content,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.DeletedAt,
 			&i.Media,
 			&i.Hashtags,
 			&i.Mentions,
-			&i.LocationPoint,
+			&i.Longitude,
+			&i.Latitude,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -175,33 +222,94 @@ func (q *Queries) ListYapsByUser(ctx context.Context, arg ListYapsByUserParams) 
 
 const updateYap = `-- name: UpdateYap :one
 UPDATE yaps
-SET content = $2
+SET
+    content = CASE
+        WHEN $2::text IS NOT NULL THEN $2::text
+        ELSE content
+    END,
+    media = CASE
+        WHEN $3::jsonb IS NOT NULL THEN $3::jsonb
+        ELSE media
+    END,
+    hashtags = CASE
+        WHEN $4::text[] IS NOT NULL THEN $4::text[]
+        ELSE hashtags
+    END,
+    mentions = CASE
+        WHEN $5::text[] IS NOT NULL THEN $5::text[]
+        ELSE mentions
+    END,
+    location_point = CASE
+        WHEN $6::DOUBLE PRECISION IS NOT NULL AND $7::DOUBLE PRECISION IS NOT NULL
+        AND ($6::DOUBLE PRECISION != 0 OR $7::DOUBLE PRECISION != 0)
+        THEN ST_SetSRID(ST_MakePoint($7::DOUBLE PRECISION, $6::DOUBLE PRECISION), 4326)
+        WHEN $8::boolean THEN NULL
+        ELSE location_point
+    END
 WHERE yap_id = $1
-AND user_id = $3
-AND deleted_at IS NULL
-RETURNING yap_id, user_id, content, created_at, updated_at, deleted_at, media, hashtags, mentions, location_point
+    AND user_id = $9
+    AND deleted_at IS NULL
+RETURNING yap_id,
+          user_id,
+          content,
+          media,
+          hashtags,
+          mentions,
+          ST_X(location_point::geometry) as longitude,
+          ST_Y(location_point::geometry) as latitude,
+          created_at,
+          updated_at
 `
 
 type UpdateYapParams struct {
 	YapID   pgtype.UUID
-	Content string
+	Column2 string
+	Column3 []byte
+	Column4 []string
+	Column5 []string
+	Column6 float64
+	Column7 float64
+	Column8 bool
 	UserID  pgtype.UUID
 }
 
-func (q *Queries) UpdateYap(ctx context.Context, arg UpdateYapParams) (Yap, error) {
-	row := q.db.QueryRow(ctx, updateYap, arg.YapID, arg.Content, arg.UserID)
-	var i Yap
+type UpdateYapRow struct {
+	YapID     pgtype.UUID
+	UserID    pgtype.UUID
+	Content   string
+	Media     []byte
+	Hashtags  []string
+	Mentions  []string
+	Longitude interface{}
+	Latitude  interface{}
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateYap(ctx context.Context, arg UpdateYapParams) (UpdateYapRow, error) {
+	row := q.db.QueryRow(ctx, updateYap,
+		arg.YapID,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+		arg.Column7,
+		arg.Column8,
+		arg.UserID,
+	)
+	var i UpdateYapRow
 	err := row.Scan(
 		&i.YapID,
 		&i.UserID,
 		&i.Content,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
 		&i.Media,
 		&i.Hashtags,
 		&i.Mentions,
-		&i.LocationPoint,
+		&i.Longitude,
+		&i.Latitude,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
