@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/chocological13/yapper-backend/pkg/mediaservice"
 	"log/slog"
 	"net/http"
 	"os"
@@ -38,7 +39,7 @@ type app struct {
 	rdb    *redis.Client
 }
 
-func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
+func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, mediaService mediaservice.Service) {
 	var cfg config
 
 	flag.IntVar(&cfg.port, "port", 8080, "API server port")

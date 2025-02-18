@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/chocological13/yapper-backend/pkg/mediaservice"
 	"log"
 	"log/slog"
 	"os"
@@ -26,8 +27,15 @@ func main() {
 	logger.Info("database connection pool established")
 
 	rdb := database.ConnectRedis()
-
 	logger.Info("redis connection established")
 
-	api.StartServer(dbpool, rdb)
+	mediaCfg := mediaservice.LoadConfigFromEnv()
+	mediaService, err := mediaservice.NewMediaService(mediaCfg)
+	if err != nil {
+		logger.Error("failed to initiate media service", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("media service initialized")
+
+	api.StartServer(dbpool, rdb, mediaService)
 }
