@@ -3,22 +3,18 @@ package yap
 import (
 	"github.com/chocological13/yapper-backend/pkg/apierror"
 	"github.com/chocological13/yapper-backend/pkg/util"
-	"github.com/jackc/pgx/v5/pgtype"
 	"net/http"
 )
 
 type Handler struct {
-	service *Service
+	service Service
 }
 
-func NewHandler(service *Service) *Handler {
+func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
 
-// TODO : add retrieve user from context functionality
 func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
-	//userID := r.Context().Value("user_id").(pgtype.UUID)
-
 	var input CreateYapRequest
 	if err := util.ReadJSON(w, r, &input); err != nil {
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
@@ -26,9 +22,8 @@ func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := util.NewValidator()
-	ValidateYapContent(v, input.Content)
 
-	if !v.Valid() {
+	if input.validateYapContent(v); !v.Valid() {
 		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
@@ -72,25 +67,29 @@ func (h *Handler) GetYapByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) ListsYapByUser(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ListYapsByUser(w http.ResponseWriter, r *http.Request) {
 	qs := r.URL.Query()
 
 	userIDstr := qs.Get("user_id")
 
-	var userID pgtype.UUID
-
-	if userIDstr != "" {
-		err := userID.Scan(userIDstr)
-		if err != nil {
-			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-			return
-		}
-		// TODO : check if user exists
-	} else {
-		// TODO : get user from context
+	if userIDstr == "" {
+		apierror.GlobalErrorHandler.WriteError(w, r, http.StatusBadRequest, "user_id query parameter is required")
+		return
 	}
 
+	h.fetchYapsByUser(w, r, userIDstr)
+}
+
+func (h *Handler) ListMyYaps(w http.ResponseWriter, r *http.Request) {
+	h.fetchYapsByUser(w, r, "")
+}
+
+func (h *Handler) fetchYapsByUser(w http.ResponseWriter, r *http.Request, userIDstr string) {
+	qs := r.URL.Query()
+
 	var input ListYapsRequest
+
+	input.UserID = userIDstr
 
 	v := util.NewValidator()
 	input.Limit = int32(util.ReadInt(qs, "limit", 20, v))
@@ -100,7 +99,7 @@ func (h *Handler) ListsYapByUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yaps, err := h.service.ListYapsByUser(r.Context(), userID, input)
+	yaps, err := h.service.ListYapsByUser(r.Context(), input)
 	if err != nil {
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 		return
@@ -134,8 +133,7 @@ func (h *Handler) UpdateYap(w http.ResponseWriter, r *http.Request) {
 	input.YapID = yapID
 
 	v := util.NewValidator()
-	ValidateYapContent(v, input.Content)
-	if !v.Valid() {
+	if input.validateYapContent(v); !v.Valid() {
 		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
@@ -167,7 +165,7 @@ func (h *Handler) DeleteYap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.service.DeleteYap(r.Context(), input.YapID, input.UserID)
+	err := h.service.DeleteYap(r.Context(), input.YapID)
 	if err != nil {
 		switch err {
 		case ErrYapNotFound:

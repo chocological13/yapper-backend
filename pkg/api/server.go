@@ -5,9 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/chocological13/yapper-backend/pkg/api/middleware"
-	"github.com/chocological13/yapper-backend/pkg/database/repository"
-	"github.com/chocological13/yapper-backend/pkg/yap"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,6 +15,7 @@ import (
 	"github.com/chocological13/yapper-backend/pkg/api/middleware"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/chocological13/yapper-backend/pkg/users"
+	"github.com/chocological13/yapper-backend/pkg/yap"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/chocological13/yapper-backend/pkg/auth"
@@ -61,12 +59,11 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 	authAPI := auth.New(app.dbpool, app.rdb)
 
 	queries := repository.New(app.dbpool)
+
 	userService := users.NewUserService(queries)
 	userHandler := users.NewUserHandler(userService)
 
-	// initialize repositories and service for yap
-	queries := repository.New(app.dbpool)
-	yapService := yap.NewService(queries)
+	yapService := yap.NewService(queries, userService)
 	yapHandler := yap.NewHandler(yapService)
 
 	mux := http.NewServeMux()
@@ -87,14 +84,13 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 	// Protected routes (auth required)
 
 	// yaps
-	mux.HandleFunc("POST /api/v1/yaps", yapHandler.CreateYap)
 	mux.HandleFunc("GET /api/v1/yaps/{id}", yapHandler.GetYapByID)
-	mux.HandleFunc("GET /api/v1/yaps", yapHandler.ListsYapByUser)
-	mux.HandleFunc("PUT /api/v1/yaps/{id}", yapHandler.UpdateYap)
-	mux.HandleFunc("DELETE /api/v1/yaps", yapHandler.DeleteYap)
+	mux.HandleFunc("GET /api/v1/yaps", yapHandler.ListYapsByUser)
+	mux.Handle("GET /api/v1/yaps/me", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.ListMyYaps)))
+	mux.Handle("POST /api/v1/yaps", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.CreateYap)))
+	mux.Handle("PUT /api/v1/yaps/{id}", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.UpdateYap)))
+	mux.Handle("DELETE /api/v1/yaps", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.DeleteYap)))
 
-	// ! apply future middleware here as needed
-	muxWithMiddleware := middleware.LogRequests(app.logger)(mux)
 	// Auth-related users operations
 	mux.Handle("POST "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
 		InitiateUpdateUserEmail)))

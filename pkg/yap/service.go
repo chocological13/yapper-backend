@@ -3,36 +3,44 @@ package yap
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/chocological13/yapper-backend/pkg/users"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// TODO : consider updating apierror to include custom message
 var (
 	ErrYapNotFound        = errors.New("Yap not found")
 	ErrUnauthorizedYapper = errors.New("This yap isn't yours to access")
 )
 
-type Service struct {
-	queries *repository.Queries
+type Service interface {
+	CreateYap(ctx context.Context, req CreateYapRequest) (*YapResponse, error)
+	GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapResponse, error)
+	ListYapsByUser(ctx context.Context, req ListYapsRequest) ([]*YapResponse, error)
+	UpdateYap(ctx context.Context, req UpdateYapRequest) (*YapResponse, error)
+	DeleteYap(ctx context.Context, yapID pgtype.UUID) error
 }
 
-func NewService(queries *repository.Queries) *Service {
-	return &Service{queries: queries}
+type yapService struct {
+	queries     *repository.Queries
+	userService users.UserService
 }
 
-// CreateYap handles the creation of a new Yap in the system.
-// ! still in progress without getting user info from context
-// TODO : Future params would be ctx, userID (from ctx in handler), and req
-func (s *Service) CreateYap(ctx context.Context, req CreateYapRequest) (*YapResponse, error) {
-	//yap, err := s.queries.CreateYap(ctx, repository.CreateYapParams{
-	//	UserID:  userID,
-	//	Content: req.Content,
-	//})
+func NewService(queries *repository.Queries, userService users.UserService) Service {
+	return &yapService{queries: queries,
+		userService: userService}
+}
+
+func (s *yapService) CreateYap(ctx context.Context, req CreateYapRequest) (*YapResponse, error) {
+	user, err := s.userService.GetCurrentUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	yap, err := s.queries.CreateYap(ctx, repository.CreateYapParams{
-		UserID:  req.UserID,
+		UserID:  user.ID,
 		Content: req.Content,
 	})
 
@@ -48,7 +56,7 @@ func (s *Service) CreateYap(ctx context.Context, req CreateYapRequest) (*YapResp
 	}, nil
 }
 
-func (s *Service) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapResponse, error) {
+func (s *yapService) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapResponse, error) {
 	yap, err := s.queries.GetYapByID(ctx, yapID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -66,7 +74,22 @@ func (s *Service) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapRespon
 }
 
 // ListYapsByUser fetches yaps made by a user
-func (s *Service) ListYapsByUser(ctx context.Context, userID pgtype.UUID, req ListYapsRequest) ([]*YapResponse, error) {
+func (s *yapService) ListYapsByUser(ctx context.Context, req ListYapsRequest) ([]*YapResponse, error) {
+	var userID pgtype.UUID
+
+	if req.UserID == "" {
+		user, err := s.userService.GetCurrentUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		userID = user.ID
+	} else {
+		err := userID.Scan(req.UserID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid user id: %s", err)
+		}
+	}
+
 	params := repository.ListYapsByUserParams{
 		UserID:  userID,
 		Column2: req.Limit,
@@ -98,11 +121,16 @@ func (s *Service) ListYapsByUser(ctx context.Context, userID pgtype.UUID, req Li
 // UpdateYap updates an existing Yap with the provided information.
 // Note: This feature is currently implemented but may be removed in the future
 // in the case that a yap is decidedly immutable
-func (s *Service) UpdateYap(ctx context.Context, req UpdateYapRequest) (*YapResponse, error) {
+func (s *yapService) UpdateYap(ctx context.Context, req UpdateYapRequest) (*YapResponse, error) {
+	user, err := s.userService.GetCurrentUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	params := repository.UpdateYapParams{
 		YapID:   req.YapID,
 		Content: req.Content,
-		UserID:  req.UserID,
+		UserID:  user.ID,
 	}
 
 	yap, err := s.queries.GetYapByID(ctx, req.YapID)
@@ -113,9 +141,8 @@ func (s *Service) UpdateYap(ctx context.Context, req UpdateYapRequest) (*YapResp
 		return nil, err
 	}
 
-	// TODO : check if yap actually belongs to the user
-	// right now it's checking from request, but check with the logged in user in the future
-	if yap.UserID != req.UserID {
+	// check if yap actually belongs to the user
+	if yap.UserID != user.ID {
 		return nil, ErrUnauthorizedYapper
 	}
 
@@ -132,7 +159,12 @@ func (s *Service) UpdateYap(ctx context.Context, req UpdateYapRequest) (*YapResp
 	}, nil
 }
 
-func (s *Service) DeleteYap(ctx context.Context, yapID pgtype.UUID, userID pgtype.UUID) error {
+func (s *yapService) DeleteYap(ctx context.Context, yapID pgtype.UUID) error {
+	user, err := s.userService.GetCurrentUser(ctx)
+	if err != nil {
+		return err
+	}
+
 	yap, err := s.GetYapByID(ctx, yapID)
 	if err != nil {
 		switch {
@@ -143,13 +175,13 @@ func (s *Service) DeleteYap(ctx context.Context, yapID pgtype.UUID, userID pgtyp
 		}
 	}
 
-	if yap.UserID != userID {
+	if yap.UserID != user.ID {
 		return ErrUnauthorizedYapper
 	}
 
 	params := repository.DeleteYapParams{
 		YapID:  yapID,
-		UserID: userID,
+		UserID: user.ID,
 	}
 
 	err = s.queries.DeleteYap(ctx, params)
