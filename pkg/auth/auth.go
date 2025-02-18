@@ -16,7 +16,6 @@ import (
 
 var (
 	ErrJWTGenerationError = errors.New("failed to generate JWT")
-	ErrTokenNotFound      = errors.New("token not found")
 )
 
 func register(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *AuthInput) (string, error) {
