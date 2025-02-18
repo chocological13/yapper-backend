@@ -33,7 +33,7 @@ var defaultParams = &Params{
 	keyLength:   32,
 }
 
-func hashPassword(password string) (encodedHash string, err error) {
+func HashPassword(password string) (encodedHash string, err error) {
 	salt, err := generateSalt()
 	if err != nil {
 		return "", err
@@ -99,7 +99,7 @@ func decodeHash(hash string) (params *Params, salt, key []byte, err error) {
 	return params, salt, key, nil
 }
 
-func verifyPassword(password, hash string) (match bool, params *Params, err error) {
+func VerifyPassword(password, hash string) (match bool, params *Params, err error) {
 	params, salt, key, err := decodeHash(hash)
 	if err != nil {
 		return false, nil, err

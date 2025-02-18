@@ -15,11 +15,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chocological13/yapper-backend/pkg/api/middleware"
+	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/chocological13/yapper-backend/pkg/users"
+	"github.com/redis/go-redis/v9"
+
 	"github.com/chocological13/yapper-backend/pkg/auth"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const version = "0.1.0"
+
+const apiVersion = "/api/v1"
 
 type config struct {
 	port int
@@ -30,9 +37,10 @@ type app struct {
 	cfg    config
 	logger *slog.Logger
 	dbpool *pgxpool.Pool
+	rdb    *redis.Client
 }
 
-func StartServer(dbpool *pgxpool.Pool) {
+func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 	var cfg config
 
 	flag.IntVar(&cfg.port, "port", 8080, "API server port")
@@ -47,9 +55,14 @@ func StartServer(dbpool *pgxpool.Pool) {
 		cfg,
 		logger,
 		dbpool,
+		rdb,
 	}
 
-	authAPI := auth.New(app.dbpool)
+	authAPI := auth.New(app.dbpool, app.rdb)
+
+	queries := repository.New(app.dbpool)
+	userService := users.NewUserService(queries)
+	userHandler := users.NewUserHandler(userService)
 
 	// initialize repositories and service for yap
 	queries := repository.New(app.dbpool)
@@ -57,8 +70,21 @@ func StartServer(dbpool *pgxpool.Pool) {
 	yapHandler := yap.NewHandler(yapService)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /register", authAPI.RegisterUser)
-	mux.HandleFunc("POST /login", authAPI.LoginUser)
+
+	// Public routes
+	// Auth routes
+	mux.HandleFunc("POST "+apiVersion+"/register", authAPI.RegisterUser)
+	mux.HandleFunc("POST "+apiVersion+"/login", authAPI.LoginUser)
+	mux.Handle("POST "+apiVersion+"/logout", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.LogoutUser)))
+
+	// Users routes
+	mux.HandleFunc("POST "+apiVersion+"/forgot-password", authAPI.InitiateForgotPassword)
+	mux.HandleFunc("PATCH "+apiVersion+"/forgot-password", authAPI.CompleteForgotPassword)
+
+	// Testing purposes
+	mux.HandleFunc("GET "+apiVersion+"/users", userHandler.GetUser)
+
+	// Protected routes (auth required)
 
 	// yaps
 	mux.HandleFunc("POST /api/v1/yaps", yapHandler.CreateYap)
@@ -69,6 +95,21 @@ func StartServer(dbpool *pgxpool.Pool) {
 
 	// ! apply future middleware here as needed
 	muxWithMiddleware := middleware.LogRequests(app.logger)(mux)
+	// Auth-related users operations
+	mux.Handle("POST "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
+		InitiateUpdateUserEmail)))
+	mux.Handle("PATCH "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
+		CompleteUpdateUserEmail)))
+	mux.Handle("PATCH "+apiVersion+"/users/me/reset-password", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
+		ResetPassword)))
+
+	// Users
+	mux.Handle("GET "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.GetCurrentUser)))
+	mux.Handle("PUT "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.UpdateUser)))
+	mux.Handle("DELETE "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.DeleteUser)))
+
+	// Add future middleware here
+	muxWithMiddleware := middleware.LogRequests(logger)(mux)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.port),

@@ -8,6 +8,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ActiveUser struct {
+	UserID    pgtype.UUID
+	Username  string
+	Email     string
+	Password  string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	DeletedAt pgtype.Timestamptz
+}
+
 type User struct {
 	UserID    pgtype.UUID
 	Username  string
@@ -15,6 +25,7 @@ type User struct {
 	Password  string
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
+	DeletedAt pgtype.Timestamptz
 }
 
 type Yap struct {

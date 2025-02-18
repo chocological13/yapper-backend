@@ -15,7 +15,7 @@ func createJWT(email string) (string, error) {
 
 	claims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": email,
-		"iss": "tixmaster",
+		"iss": "yapper",
 		"exp": time.Now().Add(time.Hour * 24 * 7).Unix(),
 		"iat": time.Now().Unix(),
 	})
@@ -49,7 +49,7 @@ func VerifyJWT(authHeader string) (jwt.MapClaims, error) {
 		return nil, fmt.Errorf("invalid token claims format")
 	}
 
-	if iss, ok := claims["iss"].(string); !ok || iss != "tixmaster" {
+	if iss, ok := claims["iss"].(string); !ok || iss != "yapper" {
 		return nil, fmt.Errorf("invalid token issuer")
 	}
 
