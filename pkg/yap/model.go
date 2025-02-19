@@ -5,7 +5,6 @@ import (
 	"github.com/chocological13/yapper-backend/pkg/util"
 	"github.com/jackc/pgx/v5/pgtype"
 	"mime/multipart"
-	"net/url"
 	"slices"
 	"strings"
 )
@@ -33,10 +32,10 @@ type ListYapsRequest struct {
 }
 
 type UpdateYapRequest struct {
-	YapID    pgtype.UUID  `json:"yap_id" validate:"required"`
-	Content  *string      `json:"content,omitempty" validate:"omitempty,max=140"`
-	Media    *[]MediaItem `json:"media,omitempty" validate:"omitempty,dive,max=4"`
-	Location *Location    `json:"location,omitempty" validate:"omitempty"`
+	YapID    pgtype.UUID             `json:"yap_id" validate:"required"`
+	Content  *string                 `json:"content,omitempty" validate:"omitempty,max=140"`
+	Media    []*multipart.FileHeader `json:"media,omitempty" validate:"omitempty,dive,max=4"`
+	Location *Location               `json:"location,omitempty" validate:"omitempty"`
 }
 
 type DeleteYapRequest struct {
@@ -57,38 +56,36 @@ type YapResponse struct {
 
 // ValidateYapContent to validate the content of yap request, it's used for both create and update requests
 func (input *CreateYapRequest) validateYapContent(v *util.Validator) map[string]string {
-	v.Check(len(input.Content) > 0, "content", "must be greater than zero")
-	v.Check(len(input.Content) <= 140, "content", "must not be greater than 140")
-	v.Check(len(strings.TrimSpace(input.Content)) > 0, "content", "must not be blank")
-	v.Check(len(input.Media) <= 4, "media", "must not be greater than 4")
-
-	for _, file := range input.Media {
-		v.Check(file.Size <= media.MaxFileSize, "media", "must not be greater than 10MB")
-
-		contentType := file.Header.Get("Content-Type")
-		v.Check(slices.Contains(media.ValidTypes, contentType), "media", "must contain valid type")
-	}
+	validateContent(v, input.Content)
+	validateMedia(v, input.Media)
 
 	return v.Errors
 }
 
 func (input *UpdateYapRequest) validateYapContent(v *util.Validator) map[string]string {
 	if input.Content != nil {
-		v.Check(len(*input.Content) > 0, "content", "must be greater than zero")
-		v.Check(len(*input.Content) <= 140, "content", "must not be greater than 140")
-		v.Check(len(strings.TrimSpace(*input.Content)) > 0, "content", "must not be blank")
+		validateContent(v, *input.Content)
 	}
-	if input.Media != nil && len(*input.Media) > 0 {
-		v.Check(len(*input.Media) <= 4, "media", "must not be greater than 4")
-		for _, file := range *input.Media {
-			v.Check(file.Type == "image" || file.Type == "video", "media_type", "type must be either image or video")
-
-			_, err := url.ParseRequestURI(file.URL)
-			v.Check(err == nil, "media_url", "must be a valid URL")
-		}
+	if input.Media != nil && len(input.Media) > 0 {
+		validateMedia(v, input.Media)
 	}
 
 	v.Check(input.YapID.Valid, "yap_id", "must provide yap_id")
 
 	return v.Errors
+}
+
+func validateMedia(v *util.Validator, mediaItems []*multipart.FileHeader) {
+	v.Check(len(mediaItems) <= 4, "media", "must not be greater than 4")
+	for _, file := range mediaItems {
+		v.Check(file.Size <= media.MaxFileSize, "media", "must not be greater than 10MB")
+		contentType := file.Header.Get("Content-Type")
+		v.Check(slices.Contains(media.ValidTypes, contentType), "media", "must contain valid type")
+	}
+}
+
+func validateContent(v *util.Validator, content string) {
+	v.Check(len(content) > 0, "content", "must be greater than zero")
+	v.Check(len(content) <= 140, "content", "must not be greater than 140")
+	v.Check(len(strings.TrimSpace(content)) > 0, "content", "must not be blank")
 }

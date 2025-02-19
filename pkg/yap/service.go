@@ -229,8 +229,8 @@ func extractHashtagsAndMentions(content string) ([]string, []string) {
 }
 
 func mapYapToResponse(yap YapRow) *YapResponse {
-	var media []MediaItem
-	if err := json.Unmarshal(yap.GetMedia(), &media); err != nil {
+	var mediaItems []MediaItem
+	if err := json.Unmarshal(yap.GetMedia(), &mediaItems); err != nil {
 		return nil
 	}
 
@@ -246,7 +246,7 @@ func mapYapToResponse(yap YapRow) *YapResponse {
 		YapID:     yap.GetYapID(),
 		UserID:    yap.GetUserID(),
 		Content:   yap.GetContent(),
-		Media:     media,
+		Media:     mediaItems,
 		Hashtags:  yap.GetHashtags(),
 		Mentions:  yap.GetMentions(),
 		Location:  location,
