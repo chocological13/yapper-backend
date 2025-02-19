@@ -1,4 +1,4 @@
-package mediaservice
+package media
 
 import (
 	"context"
@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"mime/multipart"
-	"path/filepath"
-
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"mime/multipart"
 )
 
 type Service interface {
@@ -33,9 +31,6 @@ func NewMediaService(cfg Config) (Service, error) {
 			"",
 		),
 		Region: cfg.Region,
-		//// For MinIO/local development, we need to disable HTTPS
-		//RetryMaxAttempts: 3,
-		//HTTPClient:       nil, // Use default
 	}
 
 	// Initialize S3 client
@@ -65,8 +60,8 @@ func generateShortID() string {
 
 func (s *mediaService) UploadMedia(ctx context.Context, file *multipart.FileHeader) (string, error) {
 	// Generate unique filename
-	ext := filepath.Ext(file.Filename)
-	filename := fmt.Sprintf("%s%s", generateShortID(), ext)
+	ext := file.Filename
+	filename := fmt.Sprintf("%s-%s", generateShortID(), ext)
 
 	// Open file
 	src, err := file.Open()
@@ -92,7 +87,7 @@ func (s *mediaService) UploadMedia(ctx context.Context, file *multipart.FileHead
 		return "", fmt.Errorf("failed to upload file: %w", err)
 	}
 
-	return fmt.Sprintf("%s%s", s.baseURL, file.Filename), nil
+	return fmt.Sprintf("%s/%s", s.baseURL, filename), nil
 }
 
 func (s *mediaService) DeleteMedia(ctx context.Context, url string) error {

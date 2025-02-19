@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/chocological13/yapper-backend/pkg/media"
 	"github.com/chocological13/yapper-backend/pkg/users"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"regexp"
+	"strings"
 )
 
 var (
@@ -26,13 +28,15 @@ type Service interface {
 }
 
 type yapService struct {
-	queries     *repository.Queries
-	userService users.UserService
+	queries      *repository.Queries
+	userService  users.UserService
+	mediaService media.Service
 }
 
-func NewService(queries *repository.Queries, userService users.UserService) Service {
+func NewService(queries *repository.Queries, userService users.UserService, mediaService media.Service) Service {
 	return &yapService{queries: queries,
-		userService: userService}
+		userService:  userService,
+		mediaService: mediaService}
 }
 
 func (s *yapService) CreateYap(ctx context.Context, req CreateYapRequest) (*YapResponse, error) {
@@ -43,9 +47,29 @@ func (s *yapService) CreateYap(ctx context.Context, req CreateYapRequest) (*YapR
 
 	hashtag, mentions := extractHashtagsAndMentions(req.Content)
 
-	mediaJSON, err := json.Marshal(req.Media)
+	var mediaItems []MediaItem
+	for _, file := range req.Media {
+		contentType := file.Header.Get("Content-Type")
+		mediaType := "image"
+		if strings.HasPrefix(contentType, "video/") {
+			mediaType = "video"
+		}
+
+		var url string
+		url, err = s.mediaService.UploadMedia(ctx, file)
+		if err != nil {
+			return nil, fmt.Errorf("could not upload media: %v", err)
+		}
+
+		mediaItems = append(mediaItems, MediaItem{
+			Type: mediaType,
+			URL:  url,
+		})
+	}
+
+	mediaJSON, err := json.Marshal(mediaItems)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not marshal media JSON: %v", err)
 	}
 
 	var lat, lng float64

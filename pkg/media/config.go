@@ -1,7 +1,12 @@
-package mediaservice
+package media
 
 import (
 	"os"
+)
+
+var (
+	MaxFileSize int64 = 10 * 1024 * 1024
+	ValidTypes        = []string{"image/jpeg", "image/png", "image/gif", "video/mp4", "video/quicktime"}
 )
 
 type Config struct {

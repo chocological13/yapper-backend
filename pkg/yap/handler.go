@@ -1,6 +1,9 @@
 package yap
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/chocological13/yapper-backend/pkg/apierror"
 	"github.com/chocological13/yapper-backend/pkg/util"
 	"net/http"
@@ -15,14 +18,13 @@ func NewHandler(service Service) *Handler {
 }
 
 func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
-	var input CreateYapRequest
-	if err := util.ReadJSON(w, r, &input); err != nil {
+	input, err := parseMultipartForm(r)
+	if err != nil {
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
 	v := util.NewValidator()
-
 	if input.validateYapContent(v); !v.Valid() {
 		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
@@ -51,12 +53,7 @@ func (h *Handler) GetYapByID(w http.ResponseWriter, r *http.Request) {
 
 	yap, err := h.service.GetYapByID(r.Context(), yapID)
 	if err != nil {
-		switch err {
-		case ErrYapNotFound:
-			apierror.GlobalErrorHandler.NotFoundResponse(w, r)
-		default:
-			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-		}
+		handleErrors(w, r, err)
 		return
 	}
 
@@ -84,6 +81,101 @@ func (h *Handler) ListMyYaps(w http.ResponseWriter, r *http.Request) {
 	h.fetchYapsByUser(w, r, "")
 }
 
+func (h *Handler) UpdateYap(w http.ResponseWriter, r *http.Request) {
+	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		return
+	}
+
+	var input UpdateYapRequest
+	if err := util.ReadJSON(w, r, &input); err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	input.YapID = yapID
+
+	v := util.NewValidator()
+	if input.validateYapContent(v); !v.Valid() {
+		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	yap, err := h.service.UpdateYap(r.Context(), input)
+	if err != nil {
+		handleErrors(w, r, err)
+		return
+	}
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"yap": yap}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		return
+	}
+}
+
+func (h *Handler) DeleteYap(w http.ResponseWriter, r *http.Request) {
+	var input DeleteYapRequest
+	if err := util.ReadJSON(w, r, &input); err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	err := h.service.DeleteYap(r.Context(), input.YapID)
+	if err != nil {
+		handleErrors(w, r, err)
+		return
+	}
+
+	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "yap successfully unyapped"}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+	}
+}
+
+// -------------------- 🔽 HELPER FUNCTIONS BELOW 🔽 --------------------
+
+// handleErrors handles.. errors
+func handleErrors(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, ErrYapNotFound):
+		apierror.GlobalErrorHandler.NotFoundResponse(w, r)
+	case errors.Is(err, ErrUnauthorizedYapper):
+		apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
+	default:
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+	}
+}
+
+// parseMultipartForm extracts data from a multipart request
+func parseMultipartForm(r *http.Request) (CreateYapRequest, error) {
+	var input CreateYapRequest
+
+	// Parse multipart form (max size: 10MB)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		return input, fmt.Errorf("parse multipart form failed: %v", err)
+	}
+
+	// Extract media files
+	input.Media = r.MultipartForm.File["media"]
+
+	// Extract content
+	input.Content = r.FormValue("content")
+
+	// Extract location (if provided)
+	if locStr := r.FormValue("location"); locStr != "" {
+		var loc Location
+		if err := json.Unmarshal([]byte(locStr), &loc); err != nil {
+			return input, fmt.Errorf("parse location failed: %v", err)
+		}
+		input.Location = &loc
+	}
+
+	return input, nil
+}
+
+// fetchYapsByUser fetches a list of yaps that have been yapped by a specified user
 func (h *Handler) fetchYapsByUser(w http.ResponseWriter, r *http.Request, userIDstr string) {
 	qs := r.URL.Query()
 
@@ -114,72 +206,5 @@ func (h *Handler) fetchYapsByUser(w http.ResponseWriter, r *http.Request, userID
 	if err != nil {
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 		return
-	}
-}
-
-func (h *Handler) UpdateYap(w http.ResponseWriter, r *http.Request) {
-	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
-	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-		return
-	}
-
-	var input UpdateYapRequest
-	if err := util.ReadJSON(w, r, &input); err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
-		return
-	}
-
-	input.YapID = yapID
-
-	v := util.NewValidator()
-	if input.validateYapContent(v); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
-		return
-	}
-
-	yap, err := h.service.UpdateYap(r.Context(), input)
-	if err != nil {
-		switch err {
-		case ErrYapNotFound:
-			apierror.GlobalErrorHandler.NotFoundResponse(w, r)
-		case ErrUnauthorizedYapper:
-			apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
-		default:
-			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-		}
-		return
-	}
-
-	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"yap": yap}, nil)
-	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-		return
-	}
-}
-
-func (h *Handler) DeleteYap(w http.ResponseWriter, r *http.Request) {
-	var input DeleteYapRequest
-	if err := util.ReadJSON(w, r, &input); err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
-		return
-	}
-
-	err := h.service.DeleteYap(r.Context(), input.YapID)
-	if err != nil {
-		switch err {
-		case ErrYapNotFound:
-			apierror.GlobalErrorHandler.NotFoundResponse(w, r)
-		case ErrUnauthorizedYapper:
-			apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
-		default:
-			apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-		}
-		return
-	}
-
-	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "yap successfully unyapped"}, nil)
-	if err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 	}
 }

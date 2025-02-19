@@ -1,9 +1,12 @@
 package yap
 
 import (
+	"github.com/chocological13/yapper-backend/pkg/media"
 	"github.com/chocological13/yapper-backend/pkg/util"
 	"github.com/jackc/pgx/v5/pgtype"
+	"mime/multipart"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -18,9 +21,9 @@ type Location struct {
 }
 
 type CreateYapRequest struct {
-	Content  string      `json:"content" validate:"required,max=140"`
-	Media    []MediaItem `json:"media" validate:"dive,max=4"`
-	Location *Location   `json:"location" validate:"omitempty"`
+	Content  string                  `json:"content" validate:"required,max=140"`
+	Media    []*multipart.FileHeader `json:"media" validate:"dive,max=4"`
+	Location *Location               `json:"location" validate:"omitempty"`
 }
 
 type ListYapsRequest struct {
@@ -59,11 +62,11 @@ func (input *CreateYapRequest) validateYapContent(v *util.Validator) map[string]
 	v.Check(len(strings.TrimSpace(input.Content)) > 0, "content", "must not be blank")
 	v.Check(len(input.Media) <= 4, "media", "must not be greater than 4")
 
-	for _, media := range input.Media {
-		v.Check(media.Type == "image" || media.Type == "video", "media_type", "type must be either image or video")
+	for _, file := range input.Media {
+		v.Check(file.Size <= media.MaxFileSize, "media", "must not be greater than 10MB")
 
-		_, err := url.ParseRequestURI(media.URL)
-		v.Check(err == nil, "media_url", "must be a valid URL")
+		contentType := file.Header.Get("Content-Type")
+		v.Check(slices.Contains(media.ValidTypes, contentType), "media", "must contain valid type")
 	}
 
 	return v.Errors
@@ -77,10 +80,10 @@ func (input *UpdateYapRequest) validateYapContent(v *util.Validator) map[string]
 	}
 	if input.Media != nil && len(*input.Media) > 0 {
 		v.Check(len(*input.Media) <= 4, "media", "must not be greater than 4")
-		for _, media := range *input.Media {
-			v.Check(media.Type == "image" || media.Type == "video", "media_type", "type must be either image or video")
+		for _, file := range *input.Media {
+			v.Check(file.Type == "image" || file.Type == "video", "media_type", "type must be either image or video")
 
-			_, err := url.ParseRequestURI(media.URL)
+			_, err := url.ParseRequestURI(file.URL)
 			v.Check(err == nil, "media_url", "must be a valid URL")
 		}
 	}
