@@ -36,10 +36,7 @@ func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = util.WriteJSON(w, http.StatusCreated, util.Envelope{"media": mediaDetails}, nil)
-	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-	}
+	respondJSON(w, r, http.StatusCreated, util.Envelope{"media": mediaDetails})
 }
 
 func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
@@ -57,15 +54,11 @@ func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
 
 	yap, err := h.service.CreateYap(r.Context(), input)
 	if err != nil {
-		handleErrors(w, r, err)
+		handleServiceErrors(w, r, err)
 		return
 	}
 
-	err = util.WriteJSON(w, http.StatusCreated, util.Envelope{"yap": yap}, nil)
-	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-		return
-	}
+	respondJSON(w, r, http.StatusCreated, util.Envelope{"yap": yap})
 }
 
 func (h *Handler) GetYapByID(w http.ResponseWriter, r *http.Request) {
@@ -77,15 +70,11 @@ func (h *Handler) GetYapByID(w http.ResponseWriter, r *http.Request) {
 
 	yap, err := h.service.GetYapByID(r.Context(), yapID)
 	if err != nil {
-		handleErrors(w, r, err)
+		handleServiceErrors(w, r, err)
 		return
 	}
 
-	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"yap": yap}, nil)
-	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-		return
-	}
+	respondJSON(w, r, http.StatusOK, util.Envelope{"yap": yap})
 }
 
 func (h *Handler) ListYapsByUser(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +115,7 @@ func (h *Handler) UpdateYap(w http.ResponseWriter, r *http.Request) {
 
 	yap, err := h.service.UpdateYap(r.Context(), yapID, input)
 	if err != nil {
-		handleErrors(w, r, err)
+		handleServiceErrors(w, r, err)
 		return
 	}
 
@@ -146,35 +135,17 @@ func (h *Handler) DeleteYap(w http.ResponseWriter, r *http.Request) {
 
 	err = h.service.DeleteYap(r.Context(), yapID)
 	if err != nil {
-		handleErrors(w, r, err)
+		handleServiceErrors(w, r, err)
 		return
 	}
 
-	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "yap successfully unyapped"}, nil)
-	if err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
-	}
+	respondJSON(w, r, http.StatusOK, util.Envelope{"message": "yap successfully unyapped"})
 }
 
 // -------------------- 🔽 HELPER FUNCTIONS BELOW 🔽 --------------------
 
-// handleErrors handles.. errors
-func handleErrors(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, ErrYapNotFound):
-		apierror.GlobalErrorHandler.NotFoundResponse(w, r)
-	case errors.Is(err, ErrUnauthorizedYapper):
-		apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
-	case errors.Is(err, media.ErrMediaNotFound):
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
-	default:
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
-	}
-}
-
 // parseMultipartForm extracts data from a multipart request
 func parseMultipartForm(r *http.Request) (*multipart.FileHeader, error) {
-	// Extract media file
 	file, header, err := r.FormFile("media")
 	if err != nil {
 		return nil, err
@@ -215,5 +186,25 @@ func (h *Handler) fetchYapsByUser(w http.ResponseWriter, r *http.Request, userID
 	if err != nil {
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 		return
+	}
+}
+
+// handleServiceErrors handles.. errors
+func handleServiceErrors(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, ErrYapNotFound):
+		apierror.GlobalErrorHandler.NotFoundResponse(w, r)
+	case errors.Is(err, ErrUnauthorizedYapper):
+		apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
+	case errors.Is(err, media.ErrMediaNotFound):
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+	default:
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+	}
+}
+
+func respondJSON(w http.ResponseWriter, r *http.Request, status int, data util.Envelope) {
+	if err := util.WriteJSON(w, status, data, nil); err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 	}
 }
