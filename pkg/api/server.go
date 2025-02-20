@@ -39,7 +39,7 @@ type app struct {
 	rdb    *redis.Client
 }
 
-func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, mediaService media.Service) {
+func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, storageService media.StorageService) {
 	var cfg config
 
 	flag.IntVar(&cfg.port, "port", 8080, "API server port")
@@ -63,6 +63,8 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, mediaService media.Ser
 
 	userService := users.NewUserService(queries)
 	userHandler := users.NewUserHandler(userService)
+
+	mediaService := media.NewService(queries, storageService)
 
 	yapService := yap.NewService(app.dbpool, queries, userService, mediaService)
 	yapHandler := yap.NewHandler(yapService)

@@ -29,13 +29,13 @@ func main() {
 	rdb := database.ConnectRedis()
 	logger.Info("redis connection established")
 
-	mediaCfg := media.LoadConfigFromEnv()
-	mediaService, err := media.NewMediaService(mediaCfg)
+	storageCfg := media.LoadConfigFromEnv()
+	storageService, err := media.NewStorageService(storageCfg)
 	if err != nil {
 		logger.Error("failed to initiate media service", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("media service initialized")
+	logger.Info("storage service initialized")
 
-	api.StartServer(dbpool, rdb, mediaService)
+	api.StartServer(dbpool, rdb, storageService)
 }

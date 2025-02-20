@@ -24,7 +24,9 @@ AND content_type = $2;
 UPDATE media
 SET content_id = $1,
     content_type = $2
-WHERE media_id = $3;
+WHERE media_id = $3
+AND content_id IS NULL
+AND content_type IS NULL;
 
 -- name: GetOrphanedMedia :many
 SELECT * FROM media
