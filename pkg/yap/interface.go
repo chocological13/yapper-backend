@@ -9,7 +9,6 @@ type YapRow interface {
 	GetYapID() pgtype.UUID
 	GetUserID() pgtype.UUID
 	GetContent() string
-	GetMedia() []byte
 	GetHashtags() []string
 	GetMentions() []string
 	GetLongitude() interface{}
@@ -22,7 +21,6 @@ type Yap struct {
 	YapID     pgtype.UUID
 	UserID    pgtype.UUID
 	Content   string
-	Media     []byte
 	Hashtags  []string
 	Mentions  []string
 	Longitude interface{}
@@ -34,7 +32,6 @@ type Yap struct {
 func (y Yap) GetYapID() pgtype.UUID            { return y.YapID }
 func (y Yap) GetUserID() pgtype.UUID           { return y.UserID }
 func (y Yap) GetContent() string               { return y.Content }
-func (y Yap) GetMedia() []byte                 { return y.Media }
 func (y Yap) GetHashtags() []string            { return y.Hashtags }
 func (y Yap) GetMentions() []string            { return y.Mentions }
 func (y Yap) GetLongitude() interface{}        { return y.Longitude }
@@ -47,7 +44,6 @@ func ConvertCreateYapRow(row repository.CreateYapRow) Yap {
 		YapID:     row.YapID,
 		UserID:    row.UserID,
 		Content:   row.Content,
-		Media:     row.Media,
 		Hashtags:  row.Hashtags,
 		Mentions:  row.Mentions,
 		Longitude: row.Longitude,
@@ -62,7 +58,6 @@ func ConvertGetYapByIDRow(row repository.GetYapByIDRow) Yap {
 		YapID:     row.YapID,
 		UserID:    row.UserID,
 		Content:   row.Content,
-		Media:     row.Media,
 		Hashtags:  row.Hashtags,
 		Mentions:  row.Mentions,
 		Longitude: row.Longitude,
@@ -77,7 +72,6 @@ func ConvertGetListYapsByUserRow(row repository.ListYapsByUserRow) Yap {
 		YapID:     row.YapID,
 		UserID:    row.UserID,
 		Content:   row.Content,
-		Media:     row.Media,
 		Hashtags:  row.Hashtags,
 		Mentions:  row.Mentions,
 		Longitude: row.Longitude,
@@ -92,7 +86,6 @@ func ConvertUpdateYapRow(row repository.UpdateYapRow) Yap {
 		YapID:     row.YapID,
 		UserID:    row.UserID,
 		Content:   row.Content,
-		Media:     row.Media,
 		Hashtags:  row.Hashtags,
 		Mentions:  row.Mentions,
 		Longitude: row.Longitude,

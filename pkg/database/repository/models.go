@@ -18,6 +18,15 @@ type ActiveUser struct {
 	DeletedAt pgtype.Timestamptz
 }
 
+type Medium struct {
+	MediaID     pgtype.UUID
+	Type        string
+	Url         string
+	ContentID   pgtype.UUID
+	ContentType pgtype.Text
+	CreatedAt   pgtype.Timestamptz
+}
+
 type User struct {
 	UserID    pgtype.UUID
 	Username  string
@@ -35,7 +44,6 @@ type Yap struct {
 	CreatedAt     pgtype.Timestamptz
 	UpdatedAt     pgtype.Timestamptz
 	DeletedAt     pgtype.Timestamptz
-	Media         []byte
 	Hashtags      []string
 	Mentions      []string
 	LocationPoint interface{}

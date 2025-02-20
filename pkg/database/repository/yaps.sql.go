@@ -15,15 +15,14 @@ const createYap = `-- name: CreateYap :one
 INSERT INTO yaps (
   user_id,
   content,
-  media,
   hashtags,
   mentions,
   location_point
 ) VALUES (
-  $1, $2, $3, $4, $5,
+  $1, $2, $3, $4,
   CASE
-    WHEN $6::DOUBLE PRECISION IS NOT NULL AND $7::DOUBLE PRECISION IS NOT NULL
-    THEN ST_SetSRID(ST_MakePoint($7::DOUBLE PRECISION, $6::DOUBLE PRECISION), 4326)
+    WHEN $5::DOUBLE PRECISION IS NOT NULL AND $6::DOUBLE PRECISION IS NOT NULL
+    THEN ST_SetSRID(ST_MakePoint($6::DOUBLE PRECISION, $5::DOUBLE PRECISION), 4326)
     ELSE NULL
   END
 )
@@ -31,7 +30,6 @@ RETURNING
   yap_id,
   user_id,
   content,
-  media,
   hashtags,
   mentions,
   ST_X(location_point::geometry) as longitude,
@@ -43,18 +41,16 @@ RETURNING
 type CreateYapParams struct {
 	UserID   pgtype.UUID
 	Content  string
-	Media    []byte
 	Hashtags []string
 	Mentions []string
+	Column5  float64
 	Column6  float64
-	Column7  float64
 }
 
 type CreateYapRow struct {
 	YapID     pgtype.UUID
 	UserID    pgtype.UUID
 	Content   string
-	Media     []byte
 	Hashtags  []string
 	Mentions  []string
 	Longitude interface{}
@@ -67,18 +63,16 @@ func (q *Queries) CreateYap(ctx context.Context, arg CreateYapParams) (CreateYap
 	row := q.db.QueryRow(ctx, createYap,
 		arg.UserID,
 		arg.Content,
-		arg.Media,
 		arg.Hashtags,
 		arg.Mentions,
+		arg.Column5,
 		arg.Column6,
-		arg.Column7,
 	)
 	var i CreateYapRow
 	err := row.Scan(
 		&i.YapID,
 		&i.UserID,
 		&i.Content,
-		&i.Media,
 		&i.Hashtags,
 		&i.Mentions,
 		&i.Longitude,
@@ -111,7 +105,6 @@ const getYapByID = `-- name: GetYapByID :one
 SELECT yap_id,
        user_id,
        content,
-       media,
        hashtags,
        mentions,
        ST_X(location_point::geometry) as longitude,
@@ -126,7 +119,6 @@ type GetYapByIDRow struct {
 	YapID     pgtype.UUID
 	UserID    pgtype.UUID
 	Content   string
-	Media     []byte
 	Hashtags  []string
 	Mentions  []string
 	Longitude interface{}
@@ -142,7 +134,6 @@ func (q *Queries) GetYapByID(ctx context.Context, yapID pgtype.UUID) (GetYapByID
 		&i.YapID,
 		&i.UserID,
 		&i.Content,
-		&i.Media,
 		&i.Hashtags,
 		&i.Mentions,
 		&i.Longitude,
@@ -157,7 +148,6 @@ const listYapsByUser = `-- name: ListYapsByUser :many
 SELECT yap_id,
        user_id,
        content,
-       media,
        hashtags,
        mentions,
        ST_X(location_point::geometry) as longitude,
@@ -180,7 +170,6 @@ type ListYapsByUserRow struct {
 	YapID     pgtype.UUID
 	UserID    pgtype.UUID
 	Content   string
-	Media     []byte
 	Hashtags  []string
 	Mentions  []string
 	Longitude interface{}
@@ -202,7 +191,6 @@ func (q *Queries) ListYapsByUser(ctx context.Context, arg ListYapsByUserParams) 
 			&i.YapID,
 			&i.UserID,
 			&i.Content,
-			&i.Media,
 			&i.Hashtags,
 			&i.Mentions,
 			&i.Longitude,
@@ -227,32 +215,27 @@ SET
         WHEN $2::text IS NOT NULL THEN $2::text
         ELSE content
     END,
-    media = CASE
-        WHEN $3::jsonb IS NOT NULL THEN $3::jsonb
-        ELSE media
-    END,
     hashtags = CASE
-        WHEN $4::text[] IS NOT NULL THEN $4::text[]
+        WHEN $3::text[] IS NOT NULL THEN $3::text[]
         ELSE hashtags
     END,
     mentions = CASE
-        WHEN $5::text[] IS NOT NULL THEN $5::text[]
+        WHEN $4::text[] IS NOT NULL THEN $4::text[]
         ELSE mentions
     END,
     location_point = CASE
-        WHEN $6::DOUBLE PRECISION IS NOT NULL AND $7::DOUBLE PRECISION IS NOT NULL
-        AND ($6::DOUBLE PRECISION != 0 OR $7::DOUBLE PRECISION != 0)
-        THEN ST_SetSRID(ST_MakePoint($7::DOUBLE PRECISION, $6::DOUBLE PRECISION), 4326)
-        WHEN $8::boolean THEN NULL
+        WHEN $5::DOUBLE PRECISION IS NOT NULL AND $6::DOUBLE PRECISION IS NOT NULL
+        AND ($5::DOUBLE PRECISION != 0 OR $6::DOUBLE PRECISION != 0)
+        THEN ST_SetSRID(ST_MakePoint($6::DOUBLE PRECISION, $5::DOUBLE PRECISION), 4326)
+        WHEN $7::boolean THEN NULL
         ELSE location_point
     END
 WHERE yap_id = $1
-    AND user_id = $9
+    AND user_id = $8
     AND deleted_at IS NULL
 RETURNING yap_id,
           user_id,
           content,
-          media,
           hashtags,
           mentions,
           ST_X(location_point::geometry) as longitude,
@@ -264,12 +247,11 @@ RETURNING yap_id,
 type UpdateYapParams struct {
 	YapID   pgtype.UUID
 	Column2 string
-	Column3 []byte
+	Column3 []string
 	Column4 []string
-	Column5 []string
+	Column5 float64
 	Column6 float64
-	Column7 float64
-	Column8 bool
+	Column7 bool
 	UserID  pgtype.UUID
 }
 
@@ -277,7 +259,6 @@ type UpdateYapRow struct {
 	YapID     pgtype.UUID
 	UserID    pgtype.UUID
 	Content   string
-	Media     []byte
 	Hashtags  []string
 	Mentions  []string
 	Longitude interface{}
@@ -295,7 +276,6 @@ func (q *Queries) UpdateYap(ctx context.Context, arg UpdateYapParams) (UpdateYap
 		arg.Column5,
 		arg.Column6,
 		arg.Column7,
-		arg.Column8,
 		arg.UserID,
 	)
 	var i UpdateYapRow
@@ -303,7 +283,6 @@ func (q *Queries) UpdateYap(ctx context.Context, arg UpdateYapParams) (UpdateYap
 		&i.YapID,
 		&i.UserID,
 		&i.Content,
-		&i.Media,
 		&i.Hashtags,
 		&i.Mentions,
 		&i.Longitude,

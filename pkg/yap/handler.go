@@ -1,11 +1,11 @@
 package yap
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/chocological13/yapper-backend/pkg/apierror"
+	"github.com/chocological13/yapper-backend/pkg/media"
 	"github.com/chocological13/yapper-backend/pkg/util"
+	"mime/multipart"
 	"net/http"
 )
 
@@ -17,9 +17,34 @@ func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
 
-func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
-	input, err := parseMultipartForm(r)
+func (h *Handler) UploadMedia(w http.ResponseWriter, r *http.Request) {
+	file, err := parseMultipartForm(r)
 	if err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	v := util.NewValidator()
+	if validateFile(v, file); !v.Valid() {
+		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	mediaDetails, err := h.service.UploadMedia(r.Context(), file)
+	if err != nil {
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	err = util.WriteJSON(w, http.StatusCreated, util.Envelope{"media": mediaDetails}, nil)
+	if err != nil {
+		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+	}
+}
+
+func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
+	var input CreateYapRequest
+	if err := util.ReadJSON(w, r, &input); err != nil {
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 		return
 	}
@@ -32,7 +57,7 @@ func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
 
 	yap, err := h.service.CreateYap(r.Context(), input)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		handleErrors(w, r, err)
 		return
 	}
 
@@ -44,7 +69,6 @@ func (h *Handler) CreateYap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetYapByID(w http.ResponseWriter, r *http.Request) {
-
 	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
 	if err != nil {
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
@@ -89,12 +113,10 @@ func (h *Handler) UpdateYap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input UpdateYapRequest
-	if err := util.ReadJSON(w, r, &input); err != nil {
+	if err = util.ReadJSON(w, r, &input); err != nil {
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 		return
 	}
-
-	input.YapID = yapID
 
 	v := util.NewValidator()
 	if input.validateYapContent(v); !v.Valid() {
@@ -102,7 +124,7 @@ func (h *Handler) UpdateYap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yap, err := h.service.UpdateYap(r.Context(), input)
+	yap, err := h.service.UpdateYap(r.Context(), yapID, input)
 	if err != nil {
 		handleErrors(w, r, err)
 		return
@@ -116,13 +138,13 @@ func (h *Handler) UpdateYap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteYap(w http.ResponseWriter, r *http.Request) {
-	var input DeleteYapRequest
-	if err := util.ReadJSON(w, r, &input); err != nil {
+	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
+	if err != nil {
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
-	err := h.service.DeleteYap(r.Context(), input.YapID)
+	err = h.service.DeleteYap(r.Context(), yapID)
 	if err != nil {
 		handleErrors(w, r, err)
 		return
@@ -143,36 +165,23 @@ func handleErrors(w http.ResponseWriter, r *http.Request, err error) {
 		apierror.GlobalErrorHandler.NotFoundResponse(w, r)
 	case errors.Is(err, ErrUnauthorizedYapper):
 		apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
+	case errors.Is(err, media.ErrMediaNotFound):
+		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 	default:
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
 // parseMultipartForm extracts data from a multipart request
-func parseMultipartForm(r *http.Request) (CreateYapRequest, error) {
-	var input CreateYapRequest
-
-	// Parse multipart form (max size: 10MB)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		return input, fmt.Errorf("parse multipart form failed: %v", err)
+func parseMultipartForm(r *http.Request) (*multipart.FileHeader, error) {
+	// Extract media file
+	file, header, err := r.FormFile("media")
+	if err != nil {
+		return nil, err
 	}
+	defer file.Close()
 
-	// Extract media files
-	input.Media = r.MultipartForm.File["media"]
-
-	// Extract content
-	input.Content = r.FormValue("content")
-
-	// Extract location (if provided)
-	if locStr := r.FormValue("location"); locStr != "" {
-		var loc Location
-		if err := json.Unmarshal([]byte(locStr), &loc); err != nil {
-			return input, fmt.Errorf("parse location failed: %v", err)
-		}
-		input.Location = &loc
-	}
-
-	return input, nil
+	return header, nil
 }
 
 // fetchYapsByUser fetches a list of yaps that have been yapped by a specified user

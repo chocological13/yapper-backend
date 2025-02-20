@@ -2,15 +2,14 @@
 INSERT INTO yaps (
   user_id,
   content,
-  media,
   hashtags,
   mentions,
   location_point
 ) VALUES (
-  $1, $2, $3, $4, $5,
+  $1, $2, $3, $4,
   CASE
-    WHEN $6::DOUBLE PRECISION IS NOT NULL AND $7::DOUBLE PRECISION IS NOT NULL
-    THEN ST_SetSRID(ST_MakePoint($7::DOUBLE PRECISION, $6::DOUBLE PRECISION), 4326)
+    WHEN $5::DOUBLE PRECISION IS NOT NULL AND $6::DOUBLE PRECISION IS NOT NULL
+    THEN ST_SetSRID(ST_MakePoint($6::DOUBLE PRECISION, $5::DOUBLE PRECISION), 4326)
     ELSE NULL
   END
 )
@@ -18,7 +17,6 @@ RETURNING
   yap_id,
   user_id,
   content,
-  media,
   hashtags,
   mentions,
   ST_X(location_point::geometry) as longitude,
@@ -30,7 +28,6 @@ RETURNING
 SELECT yap_id,
        user_id,
        content,
-       media,
        hashtags,
        mentions,
        ST_X(location_point::geometry) as longitude,
@@ -44,7 +41,6 @@ WHERE yap_id = $1 AND deleted_at IS NULL;
 SELECT yap_id,
        user_id,
        content,
-       media,
        hashtags,
        mentions,
        ST_X(location_point::geometry) as longitude,
@@ -63,32 +59,27 @@ SET
         WHEN $2::text IS NOT NULL THEN $2::text
         ELSE content
     END,
-    media = CASE
-        WHEN $3::jsonb IS NOT NULL THEN $3::jsonb
-        ELSE media
-    END,
     hashtags = CASE
-        WHEN $4::text[] IS NOT NULL THEN $4::text[]
+        WHEN $3::text[] IS NOT NULL THEN $3::text[]
         ELSE hashtags
     END,
     mentions = CASE
-        WHEN $5::text[] IS NOT NULL THEN $5::text[]
+        WHEN $4::text[] IS NOT NULL THEN $4::text[]
         ELSE mentions
     END,
     location_point = CASE
-        WHEN $6::DOUBLE PRECISION IS NOT NULL AND $7::DOUBLE PRECISION IS NOT NULL
-        AND ($6::DOUBLE PRECISION != 0 OR $7::DOUBLE PRECISION != 0)
-        THEN ST_SetSRID(ST_MakePoint($7::DOUBLE PRECISION, $6::DOUBLE PRECISION), 4326)
-        WHEN $8::boolean THEN NULL
+        WHEN $5::DOUBLE PRECISION IS NOT NULL AND $6::DOUBLE PRECISION IS NOT NULL
+        AND ($5::DOUBLE PRECISION != 0 OR $6::DOUBLE PRECISION != 0)
+        THEN ST_SetSRID(ST_MakePoint($6::DOUBLE PRECISION, $5::DOUBLE PRECISION), 4326)
+        WHEN $7::boolean THEN NULL
         ELSE location_point
     END
 WHERE yap_id = $1
-    AND user_id = $9
+    AND user_id = $8
     AND deleted_at IS NULL
 RETURNING yap_id,
           user_id,
           content,
-          media,
           hashtags,
           mentions,
           ST_X(location_point::geometry) as longitude,

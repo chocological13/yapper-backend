@@ -64,7 +64,7 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, mediaService media.Ser
 	userService := users.NewUserService(queries)
 	userHandler := users.NewUserHandler(userService)
 
-	yapService := yap.NewService(queries, userService, mediaService)
+	yapService := yap.NewService(app.dbpool, queries, userService, mediaService)
 	yapHandler := yap.NewHandler(yapService)
 
 	mux := http.NewServeMux()
@@ -85,12 +85,13 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, mediaService media.Ser
 	// Protected routes (auth required)
 
 	// yaps
-	mux.HandleFunc("GET /api/v1/yaps/{id}", yapHandler.GetYapByID)
-	mux.HandleFunc("GET /api/v1/yaps", yapHandler.ListYapsByUser)
-	mux.Handle("GET /api/v1/yaps/me", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.ListMyYaps)))
-	mux.Handle("POST /api/v1/yaps", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.CreateYap)))
-	mux.Handle("PATCH /api/v1/yaps/{id}", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.UpdateYap)))
-	mux.Handle("DELETE /api/v1/yaps", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.DeleteYap)))
+	mux.HandleFunc("GET "+apiVersion+"/yaps/{id}", yapHandler.GetYapByID)
+	mux.HandleFunc("GET "+apiVersion+"/yaps", yapHandler.ListYapsByUser)
+	mux.Handle("GET "+apiVersion+"/yaps/me", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.ListMyYaps)))
+	mux.Handle("POST "+apiVersion+"/yaps/upload", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.UploadMedia)))
+	mux.Handle("POST "+apiVersion+"/yaps", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.CreateYap)))
+	mux.Handle("PATCH "+apiVersion+"/yaps/{id}", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.UpdateYap)))
+	mux.Handle("DELETE "+apiVersion+"/yaps/{id}", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.DeleteYap)))
 
 	// Auth-related users operations
 	mux.Handle("POST "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.

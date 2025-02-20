@@ -4,15 +4,21 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"mime/multipart"
+	"time"
+)
+
+var (
+	ErrMediaNotFound = errors.New("media not found")
 )
 
 type Service interface {
-	UploadMedia(ctx context.Context, file *multipart.FileHeader) (string, error)
+	UploadMedia(ctx context.Context, file *multipart.FileHeader, folderName string) (string, error)
 	DeleteMedia(ctx context.Context, url string) error
 }
 
@@ -58,10 +64,10 @@ func generateShortID() string {
 	return hex.EncodeToString(b)
 }
 
-func (s *mediaService) UploadMedia(ctx context.Context, file *multipart.FileHeader) (string, error) {
+func (s *mediaService) UploadMedia(ctx context.Context, file *multipart.FileHeader, folderName string) (string, error) {
 	// Generate unique filename
-	ext := file.Filename
-	filename := fmt.Sprintf("%s-%s", generateShortID(), ext)
+	dateString := time.Now().Unix()
+	filename := fmt.Sprintf("%s/%s-%d", folderName, generateShortID(), dateString)
 
 	// Open file
 	src, err := file.Open()
