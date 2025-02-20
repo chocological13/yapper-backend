@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/chocological13/yapper-backend/pkg/cronjob"
 	"github.com/chocological13/yapper-backend/pkg/media"
 	"log/slog"
 	"net/http"
@@ -64,10 +65,13 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, storageService media.S
 	userService := users.NewUserService(queries)
 	userHandler := users.NewUserHandler(userService)
 
-	mediaService := media.NewService(queries, storageService)
+	mediaService := media.NewService(app.dbpool, queries, storageService, app.logger)
 
 	yapService := yap.NewService(app.dbpool, queries, userService, mediaService)
 	yapHandler := yap.NewHandler(yapService)
+
+	scheduler := cronjob.NewScheduler(mediaService, app.logger)
+	scheduler.Start()
 
 	mux := http.NewServeMux()
 

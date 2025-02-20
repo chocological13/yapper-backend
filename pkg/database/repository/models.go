@@ -25,6 +25,7 @@ type Medium struct {
 	ContentID   pgtype.UUID
 	ContentType pgtype.Text
 	CreatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
 }
 
 type User struct {

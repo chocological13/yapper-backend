@@ -19,7 +19,7 @@ INSERT INTO media (
     content_type
 ) VALUES (
     $1, $2, $3, $4
-) RETURNING media_id, type, url, content_id, content_type, created_at
+) RETURNING media_id, type, url, content_id, content_type, created_at, deleted_at
 `
 
 type CreateMediaParams struct {
@@ -44,23 +44,15 @@ func (q *Queries) CreateMedia(ctx context.Context, arg CreateMediaParams) (Mediu
 		&i.ContentID,
 		&i.ContentType,
 		&i.CreatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
-const deleteMedia = `-- name: DeleteMedia :exec
-DELETE FROM media
-WHERE media_id = $1
-`
-
-func (q *Queries) DeleteMedia(ctx context.Context, mediaID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteMedia, mediaID)
-	return err
-}
-
 const getMediaByID = `-- name: GetMediaByID :one
-SELECT media_id, type, url, content_id, content_type, created_at FROM media
+SELECT media_id, type, url, content_id, content_type, created_at, deleted_at FROM media
 WHERE media_id = $1
+AND deleted_at IS NULL
 `
 
 func (q *Queries) GetMediaByID(ctx context.Context, mediaID pgtype.UUID) (Medium, error) {
@@ -73,13 +65,16 @@ func (q *Queries) GetMediaByID(ctx context.Context, mediaID pgtype.UUID) (Medium
 		&i.ContentID,
 		&i.ContentType,
 		&i.CreatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getMediaForContent = `-- name: GetMediaForContent :many
-SELECT media_id, type, url, content_id, content_type, created_at FROM media
-WHERE content_id = $1 AND content_type = $2
+SELECT media_id, type, url, content_id, content_type, created_at, deleted_at FROM media
+WHERE content_id = $1
+AND content_type = $2
+AND deleted_at IS NULL
 ORDER BY created_at ASC
 `
 
@@ -104,6 +99,7 @@ func (q *Queries) GetMediaForContent(ctx context.Context, arg GetMediaForContent
 			&i.ContentID,
 			&i.ContentType,
 			&i.CreatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -116,8 +112,9 @@ func (q *Queries) GetMediaForContent(ctx context.Context, arg GetMediaForContent
 }
 
 const getOrphanedMedia = `-- name: GetOrphanedMedia :many
-SELECT media_id, type, url, content_id, content_type, created_at FROM media
+SELECT media_id, type, url, content_id, content_type, created_at, deleted_at FROM media
 WHERE content_id IS NULL
+AND deleted_at IS NULL
 AND created_at < $1
 `
 
@@ -137,6 +134,7 @@ func (q *Queries) GetOrphanedMedia(ctx context.Context, createdAt pgtype.Timesta
 			&i.ContentID,
 			&i.ContentType,
 			&i.CreatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -149,10 +147,11 @@ func (q *Queries) GetOrphanedMedia(ctx context.Context, createdAt pgtype.Timesta
 }
 
 const getUnassociatedMediaByID = `-- name: GetUnassociatedMediaByID :one
-SELECT media_id, type, url, content_id, content_type, created_at FROM media
+SELECT media_id, type, url, content_id, content_type, created_at, deleted_at FROM media
 WHERE media_id = $1
 AND content_id IS NULL
 AND content_type IS NULL
+AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUnassociatedMediaByID(ctx context.Context, mediaID pgtype.UUID) (Medium, error) {
@@ -165,8 +164,20 @@ func (q *Queries) GetUnassociatedMediaByID(ctx context.Context, mediaID pgtype.U
 		&i.ContentID,
 		&i.ContentType,
 		&i.CreatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const hardDeleteSoftDeletedMedia = `-- name: HardDeleteSoftDeletedMedia :exec
+DELETE FROM media
+WHERE deleted_at IS NOT NULL
+AND deleted_at < $1
+`
+
+func (q *Queries) HardDeleteSoftDeletedMedia(ctx context.Context, deletedAt pgtype.Timestamptz) error {
+	_, err := q.db.Exec(ctx, hardDeleteSoftDeletedMedia, deletedAt)
+	return err
 }
 
 const orphanMedia = `-- name: OrphanMedia :exec
@@ -175,6 +186,7 @@ SET content_id = NULL,
     content_type = NULL
 WHERE content_id = $1
 AND content_type = $2
+AND deleted_at IS NULL
 `
 
 type OrphanMediaParams struct {
@@ -187,6 +199,17 @@ func (q *Queries) OrphanMedia(ctx context.Context, arg OrphanMediaParams) error 
 	return err
 }
 
+const softDeleteMedia = `-- name: SoftDeleteMedia :exec
+UPDATE media
+SET deleted_at = NOW()
+WHERE media_id = $1
+`
+
+func (q *Queries) SoftDeleteMedia(ctx context.Context, mediaID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteMedia, mediaID)
+	return err
+}
+
 const updateMediaContent = `-- name: UpdateMediaContent :exec
 UPDATE media
 SET content_id = $1,
@@ -194,6 +217,7 @@ SET content_id = $1,
 WHERE media_id = $3
 AND content_id IS NULL
 AND content_type IS NULL
+AND deleted_at IS NULL
 `
 
 type UpdateMediaContentParams struct {
