@@ -20,10 +20,10 @@ type UserService interface {
 }
 
 type userService struct {
-	repository *repository.Queries
+	repository repository.Querier
 }
 
-func NewUserService(repository *repository.Queries) UserService {
+func NewUserService(repository repository.Querier) UserService {
 	return &userService{repository: repository}
 }
 

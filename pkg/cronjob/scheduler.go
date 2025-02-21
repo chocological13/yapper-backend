@@ -13,11 +13,11 @@ type Scheduler interface {
 
 type scheduler struct {
 	cron         *cron.Cron
-	mediaService media.Service
+	mediaService media.MediaService
 	logger       *slog.Logger
 }
 
-func NewScheduler(mediaService media.Service, logger *slog.Logger) Scheduler {
+func NewScheduler(mediaService media.MediaService, logger *slog.Logger) Scheduler {
 	return &scheduler{
 		cron:         cron.New(),
 		mediaService: mediaService,

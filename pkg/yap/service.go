@@ -22,7 +22,7 @@ const (
 	YapContentType = "yap"
 )
 
-type Service interface {
+type YapService interface {
 	UploadMedia(ctx context.Context, media *multipart.FileHeader) (*MediaItem, error)
 	CreateYap(ctx context.Context, req CreateYapRequest) (*YapResponse, error)
 	GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapResponse, error)
@@ -33,13 +33,13 @@ type Service interface {
 
 type yapService struct {
 	db           *pgxpool.Pool
-	queries      *repository.Queries
+	queries      repository.Querier
 	userService  users.UserService
-	mediaService media.Service
+	mediaService media.MediaService
 }
 
-func NewService(db *pgxpool.Pool, queries *repository.Queries, userService users.UserService,
-	mediaService media.Service) Service {
+func NewYapService(db *pgxpool.Pool, queries repository.Querier, userService users.UserService,
+	mediaService media.MediaService) YapService {
 	return &yapService{
 		db:           db,
 		queries:      queries,

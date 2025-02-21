@@ -65,10 +65,10 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, storageService media.S
 	userService := users.NewUserService(queries)
 	userHandler := users.NewUserHandler(userService)
 
-	mediaService := media.NewService(app.dbpool, queries, storageService, app.logger)
+	mediaService := media.NewMediaService(app.dbpool, queries, storageService, app.logger)
 
-	yapService := yap.NewService(app.dbpool, queries, userService, mediaService)
-	yapHandler := yap.NewHandler(yapService)
+	yapService := yap.NewYapService(app.dbpool, queries, userService, mediaService)
+	yapHandler := yap.NewYapHandler(yapService)
 
 	scheduler := cronjob.NewScheduler(mediaService, app.logger)
 	scheduler.Start()

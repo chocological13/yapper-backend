@@ -8,3 +8,4 @@ sql:
         package: "repository"
         out: "pkg/database/repository"
         sql_package: "pgx/v5"
+        emit_interface: true

@@ -20,7 +20,7 @@ var (
 	ErrMediaNotFound = errors.New("media not found")
 )
 
-type Service interface {
+type MediaService interface {
 	UploadMedia(ctx context.Context, file *multipart.FileHeader, folderName string) (*repository.Medium, error)
 	GetMediaByID(ctx context.Context, mediaID pgtype.UUID) (*repository.Medium, error)
 	GetUnassociatedMediaByID(ctx context.Context, mediaID pgtype.UUID) (*repository.Medium, error)
@@ -29,19 +29,19 @@ type Service interface {
 	OrphanMedia(ctx context.Context, mediaID pgtype.UUID, contentType string) error
 	CleanUpOrphanedMedia(ctx context.Context) error
 	HardDeleteSoftDeletedMedia(ctx context.Context) error
-	WithTx(tx pgx.Tx) Service
+	WithTx(tx pgx.Tx) MediaService
 }
 
 type mediaService struct {
 	db             *pgxpool.Pool
-	queries        *repository.Queries
+	queries        repository.Querier
 	tx             pgx.Tx
 	storageService StorageService
 	logger         *slog.Logger
 }
 
-func NewService(db *pgxpool.Pool, queries *repository.Queries, storageService StorageService,
-	logger *slog.Logger) Service {
+func NewMediaService(db *pgxpool.Pool, queries repository.Querier, storageService StorageService,
+	logger *slog.Logger) MediaService {
 	return &mediaService{
 		db:             db,
 		queries:        queries,
@@ -50,7 +50,7 @@ func NewService(db *pgxpool.Pool, queries *repository.Queries, storageService St
 	}
 }
 
-func (s *mediaService) WithTx(tx pgx.Tx) Service {
+func (s *mediaService) WithTx(tx pgx.Tx) MediaService {
 	return &mediaService{
 		db:             s.db,
 		queries:        repository.New(tx),
@@ -191,7 +191,7 @@ func (s *mediaService) HardDeleteSoftDeletedMedia(ctx context.Context) error {
 
 // -------------------- 🔽 HELPER FUNCTIONS BELOW 🔽 --------------------
 
-func (s *mediaService) getQueries() *repository.Queries {
+func (s *mediaService) getQueries() repository.Querier {
 	if s.tx != nil {
 		return repository.New(s.tx)
 	}
