@@ -3,26 +3,28 @@ package users
 import (
 	"context"
 	"errors"
+	"net/http"
+	"time"
+
 	"github.com/chocological13/yapper-backend/pkg/apierror"
 	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"github.com/chocological13/yapper-backend/pkg/util"
-	"net/http"
-	"time"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type UserHandler struct {
-	service UserService
+	dbpool *pgxpool.Pool
 }
 
-func NewUserHandler(service UserService) *UserHandler {
-	return &UserHandler{service: service}
+func NewUserHandler(dbpool *pgxpool.Pool) *UserHandler {
+	return &UserHandler{dbpool}
 }
 
 // Testing purposes only
 func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Query().Get("email")
 
-	user, err := h.service.GetUser(r.Context(), GetUserRequest{Email: email})
+	user, err := getUser(r.Context(), h.dbpool, GetUserRequest{Email: email})
 	if err != nil {
 		handleError(w, r, err)
 		return
@@ -35,7 +37,7 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
-	user, err := h.service.GetCurrentUser(r.Context())
+	user, err := getCurrentUser(r.Context(), h.dbpool)
 	if err != nil {
 		handleError(w, r, err)
 		return
@@ -55,7 +57,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.service.UpdateUser(r.Context(), input)
+	user, err := updateUser(r.Context(), h.dbpool, input)
 	if err != nil {
 		handleError(w, r, err)
 		return
@@ -75,7 +77,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.DeleteUser(r.Context(), input)
+	err = deleteUser(r.Context(), h.dbpool, input)
 	if err != nil {
 		handleError(w, r, err)
 		return

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/chocological13/yapper-backend/pkg/api/middleware"
-	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/chocological13/yapper-backend/pkg/users"
 	"github.com/redis/go-redis/v9"
 
@@ -56,10 +55,7 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
 	}
 
 	authAPI := auth.New(app.dbpool, app.rdb)
-
-	queries := repository.New(app.dbpool)
-	userService := users.NewUserService(queries)
-	userHandler := users.NewUserHandler(userService)
+	userHandler := users.NewUserHandler(app.dbpool)
 
 	mux := http.NewServeMux()
 
