@@ -3,47 +3,50 @@ package users
 import (
 	"context"
 	"errors"
+	"net/http"
+	"time"
+
 	"github.com/chocological13/yapper-backend/pkg/apierror"
 	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"github.com/chocological13/yapper-backend/pkg/util"
-	"net/http"
-	"time"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type UserHandler struct {
-	service UserService
+	dbpool       *pgxpool.Pool
+	errorHandler *apierror.ErrorHandler
 }
 
-func NewUserHandler(service UserService) *UserHandler {
-	return &UserHandler{service: service}
+func NewUserHandler(dbpool *pgxpool.Pool, errorHandler *apierror.ErrorHandler) *UserHandler {
+	return &UserHandler{dbpool, errorHandler}
 }
 
 // Testing purposes only
 func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Query().Get("email")
 
-	user, err := h.service.GetUser(r.Context(), GetUserRequest{Email: email})
+	user, err := getUser(r.Context(), h.dbpool, GetUserRequest{Email: email})
 	if err != nil {
-		handleError(w, r, err)
+		h.handleError(w, r, err)
 		return
 	}
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"user": user}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
 func (h *UserHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
-	user, err := h.service.GetCurrentUser(r.Context())
+	user, err := getCurrentUser(r.Context(), h.dbpool)
 	if err != nil {
-		handleError(w, r, err)
+		h.handleError(w, r, err)
 		return
 	}
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"user": user}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
@@ -51,19 +54,19 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	var input UpdateUserRequest
 	err := util.ReadJSON(w, r, &input)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 
-	user, err := h.service.UpdateUser(r.Context(), input)
+	user, err := updateUser(r.Context(), h.dbpool, input)
 	if err != nil {
-		handleError(w, r, err)
+		h.handleError(w, r, err)
 		return
 	}
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"user": user}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
@@ -71,13 +74,13 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	var input DeleteUserRequest
 	err := util.ReadJSON(w, r, &input)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 
-	err = h.service.DeleteUser(r.Context(), input)
+	err = deleteUser(r.Context(), h.dbpool, input)
 	if err != nil {
-		handleError(w, r, err)
+		h.handleError(w, r, err)
 		return
 	}
 
@@ -86,7 +89,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "user successfully deleted"}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
@@ -106,15 +109,15 @@ func (h *UserHandler) clearAuthContext(w http.ResponseWriter, r *http.Request) {
 	*r = *r.WithContext(context.Background())
 }
 
-func handleError(w http.ResponseWriter, r *http.Request, err error) {
+func (h *UserHandler) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, apperrors.ErrUserNotFound):
-		apierror.GlobalErrorHandler.NotFoundResponse(w, r)
+		h.errorHandler.NotFoundResponse(w, r)
 	case errors.Is(err, apperrors.ErrContextNotFound):
-		apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
+		h.errorHandler.UnauthorizedResponse(w, r)
 	case errors.Is(err, apperrors.ErrDuplicateEmail):
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		h.errorHandler.BadRequestResponse(w, r, err)
 	default:
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }

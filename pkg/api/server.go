@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/chocological13/yapper-backend/pkg/api/middleware"
-	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/chocological13/yapper-backend/pkg/apierror"
 	"github.com/chocological13/yapper-backend/pkg/users"
 	"github.com/redis/go-redis/v9"
 
@@ -31,68 +31,69 @@ type config struct {
 }
 
 type app struct {
-	cfg    config
-	logger *slog.Logger
-	dbpool *pgxpool.Pool
-	rdb    *redis.Client
+	cfg          config
+	logger       *slog.Logger
+	dbpool       *pgxpool.Pool
+	rdb          *redis.Client
+	errorHandler *apierror.ErrorHandler
 }
 
-func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
+func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, logger *slog.Logger) {
 	var cfg config
 
 	flag.IntVar(&cfg.port, "port", 8080, "API server port")
 	flag.StringVar(&cfg.env, "env", "dev", "Environment (dev|staging|prod)")
 	flag.Parse()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	errorHandler := apierror.New(logger)
 
 	app := &app{
 		cfg,
 		logger,
 		dbpool,
 		rdb,
+		errorHandler,
 	}
 
-	authAPI := auth.New(app.dbpool, app.rdb)
-
-	queries := repository.New(app.dbpool)
-	userService := users.NewUserService(queries)
-	userHandler := users.NewUserHandler(userService)
+	authAPI := auth.New(app.dbpool, app.rdb, app.errorHandler)
+	userHandler := users.NewUserHandler(app.dbpool, app.errorHandler)
 
 	mux := http.NewServeMux()
 
 	// Public routes
 	// Auth routes
-	mux.HandleFunc("POST "+apiVersion+"/register", authAPI.RegisterUser)
-	mux.HandleFunc("POST "+apiVersion+"/login", authAPI.LoginUser)
-	mux.Handle("POST "+apiVersion+"/logout", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.LogoutUser)))
+	mux.HandleFunc("POST /register", authAPI.RegisterUser)
+	mux.HandleFunc("POST /login", authAPI.LoginUser)
+	mux.Handle("POST /logout", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.LogoutUser)))
 
 	// Users routes
-	mux.HandleFunc("POST "+apiVersion+"/forgot-password", authAPI.InitiateForgotPassword)
-	mux.HandleFunc("PATCH "+apiVersion+"/forgot-password", authAPI.CompleteForgotPassword)
+	mux.HandleFunc("POST /forgot-password", authAPI.InitiateForgotPassword)
+	mux.HandleFunc("PATCH /forgot-password", authAPI.CompleteForgotPassword)
 
 	// Testing purposes
-	mux.HandleFunc("GET "+apiVersion+"/users", userHandler.GetUser)
+	mux.HandleFunc("GET /users", userHandler.GetUser)
 
 	// Protected routes (auth required)
 
 	// Auth-related users operations
-	mux.Handle("POST "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
-		InitiateUpdateUserEmail)))
-	mux.Handle("PATCH "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
-		CompleteUpdateUserEmail)))
-	mux.Handle("PATCH "+apiVersion+"/users/me/reset-password", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
-		ResetPassword)))
+	authMux := http.NewServeMux()
+	authMux.HandleFunc("POST /users/me/email", authAPI.InitiateUpdateUserEmail)
+	authMux.HandleFunc("PATCH /users/me/email", authAPI.CompleteUpdateUserEmail)
+	authMux.HandleFunc("PATCH /users/me/reset-password", authAPI.ResetPassword)
 
 	// Users
-	mux.Handle("GET "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.GetCurrentUser)))
-	mux.Handle("PUT "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.UpdateUser)))
-	mux.Handle("DELETE "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.DeleteUser)))
+	authMux.HandleFunc("GET /users/me", userHandler.GetCurrentUser)
+	authMux.HandleFunc("PUT /users/me", userHandler.UpdateUser)
+	authMux.HandleFunc("DELETE /users/me", userHandler.DeleteUser)
+
+	mux.Handle("/", middleware.Auth(app.rdb)(authMux))
+
+	// /v1 prefix
+	v1 := http.NewServeMux()
+	v1.Handle("/v1/", http.StripPrefix("/v1", mux))
 
 	// Add future middleware here
-	muxWithMiddleware := middleware.LogRequests(logger)(mux)
+	muxWithMiddleware := middleware.LogRequests(logger)(v1)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.port),
