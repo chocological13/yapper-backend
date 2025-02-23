@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log"
 	"log/slog"
 	"os"
@@ -11,15 +10,15 @@ import (
 	"github.com/joho/godotenv"
 )
 
-var ctx = context.Background()
-
 func main() {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
 
 	dbpool := database.ConnectDB(os.Getenv("DATABASE_URL"))
 	defer dbpool.Close()
@@ -29,5 +28,5 @@ func main() {
 
 	logger.Info("redis connection established")
 
-	api.StartServer(dbpool, rdb)
+	api.StartServer(dbpool, rdb, logger)
 }

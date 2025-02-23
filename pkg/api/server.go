@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/chocological13/yapper-backend/pkg/api/middleware"
+	"github.com/chocological13/yapper-backend/pkg/apierror"
 	"github.com/chocological13/yapper-backend/pkg/users"
 	"github.com/redis/go-redis/v9"
 
@@ -30,32 +31,32 @@ type config struct {
 }
 
 type app struct {
-	cfg    config
-	logger *slog.Logger
-	dbpool *pgxpool.Pool
-	rdb    *redis.Client
+	cfg          config
+	logger       *slog.Logger
+	dbpool       *pgxpool.Pool
+	rdb          *redis.Client
+	errorHandler *apierror.ErrorHandler
 }
 
-func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client) {
+func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, logger *slog.Logger) {
 	var cfg config
 
 	flag.IntVar(&cfg.port, "port", 8080, "API server port")
 	flag.StringVar(&cfg.env, "env", "dev", "Environment (dev|staging|prod)")
 	flag.Parse()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	errorHandler := apierror.New(logger)
 
 	app := &app{
 		cfg,
 		logger,
 		dbpool,
 		rdb,
+		errorHandler,
 	}
 
-	authAPI := auth.New(app.dbpool, app.rdb)
-	userHandler := users.NewUserHandler(app.dbpool)
+	authAPI := auth.New(app.dbpool, app.rdb, app.errorHandler)
+	userHandler := users.NewUserHandler(app.dbpool, app.errorHandler)
 
 	mux := http.NewServeMux()
 

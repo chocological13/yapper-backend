@@ -7,15 +7,14 @@ import (
 	"github.com/chocological13/yapper-backend/pkg/util"
 )
 
-var GlobalErrorHandler *ErrorHandler // Global variable
-
-// Initialize the global ErrorHandler once
-func init() {
-	GlobalErrorHandler = &ErrorHandler{logger: slog.Default()}
-}
-
 type ErrorHandler struct {
 	logger *slog.Logger
+}
+
+func New(logger *slog.Logger) *ErrorHandler {
+	return &ErrorHandler{
+		logger,
+	}
 }
 
 func (eh *ErrorHandler) logError(r *http.Request, err error) {

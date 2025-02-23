@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"net/http"
 	"time"
+
+	"github.com/chocological13/yapper-backend/pkg/apperrors"
 
 	"github.com/redis/go-redis/v9"
 
@@ -16,14 +17,16 @@ import (
 )
 
 type AuthAPI struct {
-	dbpool *pgxpool.Pool
-	rdb    *redis.Client
+	dbpool       *pgxpool.Pool
+	rdb          *redis.Client
+	errorHandler *apierror.ErrorHandler
 }
 
-func New(dbpool *pgxpool.Pool, rdb *redis.Client) *AuthAPI {
+func New(dbpool *pgxpool.Pool, rdb *redis.Client, errorHandler *apierror.ErrorHandler) *AuthAPI {
 	return &AuthAPI{
 		dbpool,
 		rdb,
+		errorHandler,
 	}
 }
 
@@ -31,20 +34,20 @@ func (api *AuthAPI) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	exp := time.Now().Add(time.Hour * 24 * 7)
 	var input AuthInput
 	if err := util.ReadJSON(w, r, &input); err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		api.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
 	v := util.NewValidator()
 
 	if input.validate(true, v); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		api.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
 	jwt, err := register(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 
@@ -60,7 +63,7 @@ func (api *AuthAPI) RegisterUser(w http.ResponseWriter, r *http.Request) {
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"jwt": jwt}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
@@ -68,20 +71,20 @@ func (api *AuthAPI) LoginUser(w http.ResponseWriter, r *http.Request) {
 	exp := time.Now().Add(time.Hour * 24 * 7)
 	var input AuthInput
 	if err := util.ReadJSON(w, r, &input); err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		api.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
 	v := util.NewValidator()
 
 	if input.validate(false, v); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		api.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
 	jwt, err := login(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
-		handleErrors(w, r, err)
+		api.handleErrors(w, r, err)
 		return
 	}
 
@@ -97,20 +100,20 @@ func (api *AuthAPI) LoginUser(w http.ResponseWriter, r *http.Request) {
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"jwt": jwt}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
 func (api *AuthAPI) LogoutUser(w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		apierror.GlobalErrorHandler.InvalidCredentialsResponse(w, r)
+		api.errorHandler.InvalidCredentialsResponse(w, r)
 		return
 	}
 
 	err := api.rdb.Set(r.Context(), fmt.Sprintf("jwt:blacklist:%s", authHeader), authHeader, 7*24*time.Hour).Err()
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -134,25 +137,25 @@ func (api *AuthAPI) LogoutUser(w http.ResponseWriter, r *http.Request) {
 func (api *AuthAPI) InitiateForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var input ForgotPasswordRequest
 	if err := util.ReadJSON(w, r, &input); err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		api.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
 	v := util.NewValidator()
 	if input.validateForgotPasswordRequest(v); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		api.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
 	tokenString, err := initiateForgorPassword(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
-		handleErrors(w, r, err)
+		api.handleErrors(w, r, err)
 		return
 	}
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"token": tokenString}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
@@ -160,25 +163,25 @@ func (api *AuthAPI) CompleteForgotPassword(w http.ResponseWriter, r *http.Reques
 	var input CompleteForgotPassword
 	err := util.ReadJSON(w, r, &input)
 	if err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		api.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
 	v := util.NewValidator()
 	if input.validateForgotPassword(v); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		api.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
 	err = completeForgorPassword(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
-		handleErrors(w, r, err)
+		api.handleErrors(w, r, err)
 		return
 	}
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "password updated successfully"}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 	}
 
 }
@@ -187,19 +190,19 @@ func (api *AuthAPI) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var input ResetPasswordRequest
 	err := util.ReadJSON(w, r, &input)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 
 	v := util.NewValidator()
 	if input.validateResetPassword(v); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		api.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
 	err = resetPassword(r.Context(), api.dbpool, &input)
 	if err != nil {
-		handleErrors(w, r, err)
+		api.handleErrors(w, r, err)
 		return
 	}
 
@@ -209,7 +212,7 @@ func (api *AuthAPI) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "password changed successfully. " +
 		"please log in with your new credentials."}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
@@ -219,7 +222,7 @@ func (api *AuthAPI) ResetPassword(w http.ResponseWriter, r *http.Request) {
 func (api *AuthAPI) InitiateUpdateUserEmail(w http.ResponseWriter, r *http.Request) {
 	var input UpdateEmailRequest
 	if err := util.ReadJSON(w, r, &input); err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		api.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
@@ -227,38 +230,38 @@ func (api *AuthAPI) InitiateUpdateUserEmail(w http.ResponseWriter, r *http.Reque
 
 	v := util.NewValidator()
 	if input.validateUpdateEmail(ctxEmail, v); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		api.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
 	token, err := initiateUpdateEmail(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
-		handleErrors(w, r, err)
+		api.handleErrors(w, r, err)
 		return
 	}
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"token": token}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
 func (api *AuthAPI) CompleteUpdateUserEmail(w http.ResponseWriter, r *http.Request) {
 	var input CompleteUpdateEmail
 	if err := util.ReadJSON(w, r, &input); err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		api.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
 	v := util.NewValidator()
 	if input.validateUpdateEmail(v); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		api.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
 	err := completeUpdateUserEmail(r.Context(), api.dbpool, api.rdb, &input)
 	if err != nil {
-		handleErrors(w, r, err)
+		api.handleErrors(w, r, err)
 		return
 	}
 
@@ -267,22 +270,22 @@ func (api *AuthAPI) CompleteUpdateUserEmail(w http.ResponseWriter, r *http.Reque
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"message": "email updated successfully. " +
 		"please log back in with your new credentials"}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
 // helpers
-func handleErrors(w http.ResponseWriter, r *http.Request, err error) {
+func (api *AuthAPI) handleErrors(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, apperrors.ErrUserNotFound):
-		apierror.GlobalErrorHandler.NotFoundResponse(w, r)
+		api.errorHandler.NotFoundResponse(w, r)
 	case errors.Is(err, apperrors.ErrContextNotFound):
-		apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
+		api.errorHandler.UnauthorizedResponse(w, r)
 	case errors.Is(err, apperrors.ErrInvalidCredentials):
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		api.errorHandler.BadRequestResponse(w, r, err)
 	case errors.Is(err, ErrInvalidToken):
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		api.errorHandler.BadRequestResponse(w, r, err)
 	default:
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		api.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
