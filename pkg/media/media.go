@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chocological13/yapper-backend/pkg/database"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"log/slog"
 	"mime/multipart"
 	"runtime"
@@ -33,14 +33,14 @@ type MediaService interface {
 }
 
 type mediaService struct {
-	db             *pgxpool.Pool
+	db             database.PgxPool
 	queries        repository.Querier
 	tx             pgx.Tx
 	storageService StorageService
 	logger         *slog.Logger
 }
 
-func NewMediaService(db *pgxpool.Pool, queries repository.Querier, storageService StorageService,
+func NewMediaService(db database.PgxPool, queries repository.Querier, storageService StorageService,
 	logger *slog.Logger) MediaService {
 	return &mediaService{
 		db:             db,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"regexp"
 
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
@@ -12,7 +13,7 @@ import (
 )
 
 // Transaction helper
-func (s *yapService) executeInTransaction(ctx context.Context, fn func(*repository.Queries, pgx.Tx) error) error {
+func (s *yapService) executeInTransaction(ctx context.Context, fn func(repository.Querier, pgx.Tx) error) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -52,7 +53,7 @@ func extractMatches(regex *regexp.Regexp, content string) []string {
 }
 
 // Yap record helpers
-func (s *yapService) createYapRecord(ctx context.Context, qtx *repository.Queries, userID pgtype.UUID,
+func (s *yapService) createYapRecord(ctx context.Context, qtx repository.Querier, userID pgtype.UUID,
 	req CreateYapRequest, hashtags, mentions []string) (repository.CreateYapRow, error) {
 
 	var lat, lng float64
@@ -71,7 +72,7 @@ func (s *yapService) createYapRecord(ctx context.Context, qtx *repository.Querie
 	})
 }
 
-func (s *yapService) updateYapRecord(ctx context.Context, qtx *repository.Queries,
+func (s *yapService) updateYapRecord(ctx context.Context, qtx repository.Querier,
 	yapID, userID pgtype.UUID, req UpdateYapRequest) (repository.UpdateYapRow, error) {
 
 	params, err := s.buildUpdateParams(req, yapID, userID)
@@ -198,7 +199,7 @@ func (s *yapService) resolveUserID(ctx context.Context, userIDStr string) (pgtyp
 
 	var userID pgtype.UUID
 	if err := userID.Scan(userIDStr); err != nil {
-		return pgtype.UUID{}, fmt.Errorf("invalid user id: %s", err)
+		return pgtype.UUID{}, apperrors.ErrInvalidUUID
 	}
 
 	return userID, nil
@@ -255,6 +256,6 @@ func mapYapToResponse(yap YapRow, mediaItems []*MediaItem) *YapResponse {
 		Mentions:  yap.GetMentions(),
 		Location:  location,
 		CreatedAt: yap.GetCreatedAt(),
-		EditedAt:  yap.GetUpdatedAt(),
+		UpdatedAt: yap.GetUpdatedAt(),
 	}
 }

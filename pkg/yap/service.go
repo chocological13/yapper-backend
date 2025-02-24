@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chocological13/yapper-backend/pkg/database"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/chocological13/yapper-backend/pkg/media"
 	"github.com/chocological13/yapper-backend/pkg/users"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"mime/multipart"
 )
 
@@ -32,13 +32,13 @@ type YapService interface {
 }
 
 type yapService struct {
-	db           *pgxpool.Pool
+	db           database.PgxPool
 	queries      repository.Querier
 	userService  users.UserService
 	mediaService media.MediaService
 }
 
-func NewYapService(db *pgxpool.Pool, queries repository.Querier, userService users.UserService,
+func NewYapService(db database.PgxPool, queries repository.Querier, userService users.UserService,
 	mediaService media.MediaService) YapService {
 	return &yapService{
 		db:           db,
@@ -79,7 +79,7 @@ func (s *yapService) CreateYap(ctx context.Context, req CreateYapRequest) (*YapR
 	hashtag, mentions := extractHashtagsAndMentions(req.Content)
 
 	var result *YapResponse
-	err = s.executeInTransaction(ctx, func(qtx *repository.Queries, tx pgx.Tx) error {
+	err = s.executeInTransaction(ctx, func(qtx repository.Querier, tx pgx.Tx) error {
 		var yap repository.CreateYapRow
 		yap, err = s.createYapRecord(ctx, qtx, user.ID, req, hashtag, mentions)
 		if err != nil {
@@ -151,7 +151,7 @@ func (s *yapService) ListYapsByUser(ctx context.Context, req ListYapsRequest) ([
 func (s *yapService) UpdateYap(ctx context.Context, yapID pgtype.UUID, req UpdateYapRequest) (*YapResponse, error) {
 	var updatedYap repository.UpdateYapRow
 
-	err := s.executeInTransaction(ctx, func(qtx *repository.Queries, tx pgx.Tx) error {
+	err := s.executeInTransaction(ctx, func(qtx repository.Querier, tx pgx.Tx) error {
 		user, err := s.userService.GetCurrentUser(ctx)
 		if err != nil {
 			return err
@@ -189,7 +189,7 @@ func (s *yapService) UpdateYap(ctx context.Context, yapID pgtype.UUID, req Updat
 }
 
 func (s *yapService) DeleteYap(ctx context.Context, yapID pgtype.UUID) error {
-	return s.executeInTransaction(ctx, func(qtx *repository.Queries, tx pgx.Tx) error {
+	return s.executeInTransaction(ctx, func(qtx repository.Querier, tx pgx.Tx) error {
 		user, err := s.userService.GetCurrentUser(ctx)
 		if err != nil {
 			return err

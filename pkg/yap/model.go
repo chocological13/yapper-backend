@@ -51,7 +51,7 @@ type YapResponse struct {
 	Mentions  []string           `json:"mentions,omitempty"`
 	Location  *Location          `json:"location,omitempty"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	EditedAt  pgtype.Timestamptz `json:"edited_at,omitempty" validate:"omitempty"`
+	UpdatedAt pgtype.Timestamptz `json:"edited_at,omitempty" validate:"omitempty"`
 }
 
 // ValidateYapContent to validate the content of yap request, it's used for both create and update requests

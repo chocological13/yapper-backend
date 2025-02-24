@@ -3,7 +3,7 @@ package yap
 import (
 	"errors"
 	"github.com/chocological13/yapper-backend/pkg/apierror"
-	"github.com/chocological13/yapper-backend/pkg/media"
+	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"github.com/chocological13/yapper-backend/pkg/util"
 	"mime/multipart"
 	"net/http"
@@ -196,7 +196,7 @@ func handleServiceErrors(w http.ResponseWriter, r *http.Request, err error) {
 		apierror.GlobalErrorHandler.NotFoundResponse(w, r)
 	case errors.Is(err, ErrUnauthorizedYapper):
 		apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
-	case errors.Is(err, media.ErrMediaNotFound):
+	case errors.Is(err, apperrors.ErrInvalidUUID):
 		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
 	default:
 		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
