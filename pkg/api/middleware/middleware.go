@@ -36,8 +36,8 @@ func Auth(rdb *redis.Client) Middleware {
 				http.Error(w, "Invalid token claims", http.StatusUnauthorized)
 				return
 			}
-			email := claims["sub"].(string)
-			ctx := context.WithValue(r.Context(), "sub", email)
+			uuid := claims["sub"].(string)
+			ctx := context.WithValue(r.Context(), "sub", uuid)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

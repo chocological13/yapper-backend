@@ -4,31 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"github.com/chocological13/yapper-backend/pkg/auth"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type UserService interface {
-	GetUser(ctx context.Context, req GetUserRequest) (*User, error)
-	GetCurrentUser(ctx context.Context) (*User, error)
-	UpdateUser(ctx context.Context, req UpdateUserRequest) (*User, error)
-	DeleteUser(ctx context.Context, req DeleteUserRequest) error
-}
-
-type userService struct {
-	repository repository.Querier
-}
-
-func NewUserService(repository repository.Querier) UserService {
-	return &userService{repository: repository}
-}
-
-func (s *userService) GetUser(ctx context.Context, req GetUserRequest) (*User, error) {
-	user, err := s.repository.GetUser(ctx, repository.GetUserParams{
+func getUser(ctx context.Context, dbpool *pgxpool.Pool, req GetUserRequest) (*User, error) {
+	user, err := repository.New(dbpool).GetUser(ctx, repository.GetUserParams{
 		UserID:   req.UserID,
 		Username: req.Username,
 		Email:    req.Email,
@@ -44,22 +31,22 @@ func (s *userService) GetUser(ctx context.Context, req GetUserRequest) (*User, e
 	return mapUserFromDB(user), nil
 }
 
-func (s *userService) GetCurrentUser(ctx context.Context) (*User, error) {
+func getCurrentUser(ctx context.Context, dbpool *pgxpool.Pool) (*User, error) {
 	email, ok := ctx.Value("sub").(string)
 	if !ok {
 		return nil, apperrors.ErrContextNotFound
 	}
 
-	return s.GetUser(ctx, GetUserRequest{Email: email})
+	return getUser(ctx, dbpool, GetUserRequest{Email: email})
 }
 
-func (s *userService) UpdateUser(ctx context.Context, req UpdateUserRequest) (*User, error) {
-	user, err := s.GetCurrentUser(ctx)
+func updateUser(ctx context.Context, dbpool *pgxpool.Pool, req UpdateUserRequest) (*User, error) {
+	user, err := getCurrentUser(ctx, dbpool)
 	if err != nil {
 		return nil, err
 	}
 
-	updatedUser, err := s.repository.UpdateUser(ctx, repository.UpdateUserParams{
+	updatedUser, err := repository.New(dbpool).UpdateUser(ctx, repository.UpdateUserParams{
 		UserID:   user.ID,
 		Username: req.Username,
 	})
@@ -74,10 +61,10 @@ func (s *userService) UpdateUser(ctx context.Context, req UpdateUserRequest) (*U
 	return mapUserFromDB(updatedUser), err
 }
 
-func (s *userService) DeleteUser(ctx context.Context, req DeleteUserRequest) error {
+func deleteUser(ctx context.Context, dbpool *pgxpool.Pool, req DeleteUserRequest) error {
 	// TODO : add more confirmation with email confirmation
 
-	user, err := s.GetCurrentUser(ctx)
+	user, err := getCurrentUser(ctx, dbpool)
 	if err != nil {
 		return err
 	}
@@ -87,7 +74,7 @@ func (s *userService) DeleteUser(ctx context.Context, req DeleteUserRequest) err
 		return apperrors.ErrInvalidCredentials
 	}
 
-	err = s.repository.DeleteUser(ctx, user.ID)
+	err = repository.New(dbpool).DeleteUser(ctx, user.ID)
 	return err
 }
 

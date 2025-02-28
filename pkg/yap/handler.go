@@ -2,79 +2,90 @@ package yap
 
 import (
 	"errors"
-	"github.com/chocological13/yapper-backend/pkg/apierror"
-	"github.com/chocological13/yapper-backend/pkg/apperrors"
-	"github.com/chocological13/yapper-backend/pkg/util"
 	"mime/multipart"
 	"net/http"
+
+	"github.com/chocological13/yapper-backend/pkg/apierror"
+	"github.com/chocological13/yapper-backend/pkg/apperrors"
+	"github.com/chocological13/yapper-backend/pkg/media"
+	"github.com/chocological13/yapper-backend/pkg/util"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type YapHandler struct {
-	service YapService
+	dbpool       *pgxpool.Pool
+	errorHandler *apierror.ErrorHandler
+	mediaService media.MediaService
 }
 
-func NewYapHandler(service YapService) *YapHandler {
-	return &YapHandler{service: service}
+func NewYapHandler(dbpool *pgxpool.Pool, errorHandler *apierror.ErrorHandler, mediaService media.MediaService) *YapHandler {
+	return &YapHandler{
+		dbpool,
+		errorHandler,
+		mediaService,
+	}
 }
 
 func (h *YapHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	file, err := parseMultipartForm(r)
 	if err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		h.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
 	v := util.NewValidator()
 	if validateFile(v, file); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		h.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	mediaDetails, err := h.service.UploadMedia(r.Context(), file)
+	mediaDetails, err := UploadMedia(r.Context(), h.mediaService, file)
 	if err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		h.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
-	respondJSON(w, r, http.StatusCreated, util.Envelope{"media": mediaDetails})
+	h.respondJSON(w, r, http.StatusCreated, util.Envelope{"media": mediaDetails})
 }
 
 func (h *YapHandler) CreateYap(w http.ResponseWriter, r *http.Request) {
 	var input CreateYapRequest
 	if err := util.ReadJSON(w, r, &input); err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		h.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
 	v := util.NewValidator()
 	if input.validateYapContent(v); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		h.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	yap, err := h.service.CreateYap(r.Context(), input)
+	yap, err := CreateYap(r.Context(), h.dbpool, h.mediaService, input)
 	if err != nil {
-		handleServiceErrors(w, r, err)
+		h.handleServiceErrors(w, r, err)
 		return
 	}
 
-	respondJSON(w, r, http.StatusCreated, util.Envelope{"yap": yap})
+	h.respondJSON(w, r, http.StatusCreated, util.Envelope{"yap": yap})
 }
 
 func (h *YapHandler) GetYapByID(w http.ResponseWriter, r *http.Request) {
+	println("ffuufufuf")
 	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 
-	yap, err := h.service.GetYapByID(r.Context(), yapID)
+	yap, err := GetYapByID(r.Context(), h.dbpool, h.mediaService, yapID)
+
 	if err != nil {
-		handleServiceErrors(w, r, err)
+		h.handleServiceErrors(w, r, err)
 		return
 	}
 
-	respondJSON(w, r, http.StatusOK, util.Envelope{"yap": yap})
+	h.respondJSON(w, r, http.StatusOK, util.Envelope{"yap": yap})
 }
 
 func (h *YapHandler) ListYapsByUser(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +94,7 @@ func (h *YapHandler) ListYapsByUser(w http.ResponseWriter, r *http.Request) {
 	userIDstr := qs.Get("user_id")
 
 	if userIDstr == "" {
-		apierror.GlobalErrorHandler.WriteError(w, r, http.StatusBadRequest, "user_id query parameter is required")
+		h.errorHandler.BadRequestResponse(w, r, errors.New("user_id query parameter is required"))
 		return
 	}
 
@@ -91,37 +102,39 @@ func (h *YapHandler) ListYapsByUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *YapHandler) ListMyYaps(w http.ResponseWriter, r *http.Request) {
-	h.fetchYapsByUser(w, r, "")
+	// println("hwhwh")
+	// h.fetchYapsByUser(w, r, "512aeba6-f538-11ef-bba0-9f271bc0896d")
+	util.WriteJSON(w, http.StatusOK, util.Envelope{"Data": "ddsdsds"}, nil)
 }
 
 func (h *YapHandler) UpdateYap(w http.ResponseWriter, r *http.Request) {
 	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 
 	var input UpdateYapRequest
 	if err = util.ReadJSON(w, r, &input); err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		h.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
 	v := util.NewValidator()
 	if input.validateYapContent(v); !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		h.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	yap, err := h.service.UpdateYap(r.Context(), yapID, input)
+	yap, err := UpdateYap(r.Context(), h.dbpool, h.mediaService, yapID, input)
 	if err != nil {
-		handleServiceErrors(w, r, err)
+		h.handleServiceErrors(w, r, err)
 		return
 	}
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"yap": yap}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 }
@@ -129,17 +142,17 @@ func (h *YapHandler) UpdateYap(w http.ResponseWriter, r *http.Request) {
 func (h *YapHandler) DeleteYap(w http.ResponseWriter, r *http.Request) {
 	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
 	if err != nil {
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		h.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
-	err = h.service.DeleteYap(r.Context(), yapID)
+	err = DeleteYap(r.Context(), h.dbpool, h.mediaService, yapID)
 	if err != nil {
-		handleServiceErrors(w, r, err)
+		h.handleServiceErrors(w, r, err)
 		return
 	}
 
-	respondJSON(w, r, http.StatusOK, util.Envelope{"message": "yap successfully unyapped"})
+	h.respondJSON(w, r, http.StatusOK, util.Envelope{"message": "yap successfully unyapped"})
 }
 
 // -------------------- 🔽 HELPER FUNCTIONS BELOW 🔽 --------------------
@@ -162,49 +175,50 @@ func (h *YapHandler) fetchYapsByUser(w http.ResponseWriter, r *http.Request, use
 	var input ListYapsRequest
 
 	input.UserID = userIDstr
+	println(input.UserID)
 
 	v := util.NewValidator()
 	input.Limit = int32(util.ReadInt(qs, "limit", 20, v))
 	input.Offset = int32(util.ReadInt(qs, "offset", 0, v))
 	if !v.Valid() {
-		apierror.GlobalErrorHandler.FailedValidationResponse(w, r, v.Errors)
+		h.errorHandler.FailedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	yaps, err := h.service.ListYapsByUser(r.Context(), input)
+	yaps, err := ListYapsByUser(r.Context(), h.dbpool, h.mediaService, input)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 
 	if len(yaps) == 0 {
-		apierror.GlobalErrorHandler.WriteError(w, r, http.StatusNotFound, "this user has not yapped any yap")
+		h.errorHandler.NotFoundResponse(w, r)
 		return
 	}
 
 	err = util.WriteJSON(w, http.StatusOK, util.Envelope{"yaps": yaps}, nil)
 	if err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 		return
 	}
 }
 
 // handleServiceErrors handles.. errors
-func handleServiceErrors(w http.ResponseWriter, r *http.Request, err error) {
+func (h *YapHandler) handleServiceErrors(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrYapNotFound):
-		apierror.GlobalErrorHandler.NotFoundResponse(w, r)
+		h.errorHandler.NotFoundResponse(w, r)
 	case errors.Is(err, ErrUnauthorizedYapper):
-		apierror.GlobalErrorHandler.UnauthorizedResponse(w, r)
+		h.errorHandler.UnauthorizedResponse(w, r)
 	case errors.Is(err, apperrors.ErrInvalidUUID):
-		apierror.GlobalErrorHandler.BadRequestResponse(w, r, err)
+		h.errorHandler.BadRequestResponse(w, r, err)
 	default:
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }
 
-func respondJSON(w http.ResponseWriter, r *http.Request, status int, data util.Envelope) {
+func (h *YapHandler) respondJSON(w http.ResponseWriter, r *http.Request, status int, data util.Envelope) {
 	if err := util.WriteJSON(w, status, data, nil); err != nil {
-		apierror.GlobalErrorHandler.ServerErrorResponse(w, r, err)
+		h.errorHandler.ServerErrorResponse(w, r, err)
 	}
 }

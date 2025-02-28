@@ -1,18 +1,16 @@
 package main
 
 import (
-	"context"
-	"github.com/chocological13/yapper-backend/pkg/media"
 	"log"
 	"log/slog"
 	"os"
+
+	"github.com/chocological13/yapper-backend/pkg/media"
 
 	"github.com/chocological13/yapper-backend/pkg/api"
 	"github.com/chocological13/yapper-backend/pkg/database"
 	"github.com/joho/godotenv"
 )
-
-var ctx = context.Background()
 
 func main() {
 	err := godotenv.Load()
@@ -20,7 +18,9 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
 
 	dbpool := database.ConnectDB(os.Getenv("DATABASE_URL"))
 	defer dbpool.Close()
@@ -37,5 +37,5 @@ func main() {
 	}
 	logger.Info("storage service initialized")
 
-	api.StartServer(dbpool, rdb, storageService)
+	api.StartServer(dbpool, rdb, storageService, logger)
 }

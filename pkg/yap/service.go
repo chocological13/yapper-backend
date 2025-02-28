@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/chocological13/yapper-backend/pkg/database"
+	"mime/multipart"
+
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/chocological13/yapper-backend/pkg/media"
-	"github.com/chocological13/yapper-backend/pkg/users"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"mime/multipart"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var (
@@ -22,41 +22,11 @@ const (
 	YapContentType = "yap"
 )
 
-type YapService interface {
-	UploadMedia(ctx context.Context, media *multipart.FileHeader) (*MediaItem, error)
-	CreateYap(ctx context.Context, req CreateYapRequest) (*YapResponse, error)
-	GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapResponse, error)
-	ListYapsByUser(ctx context.Context, req ListYapsRequest) ([]*YapResponse, error)
-	UpdateYap(ctx context.Context, yapID pgtype.UUID, req UpdateYapRequest) (*YapResponse, error)
-	DeleteYap(ctx context.Context, yapID pgtype.UUID) error
-}
-
-type yapService struct {
-	db           database.PgxPool
-	queries      repository.Querier
-	userService  users.UserService
-	mediaService media.MediaService
-}
-
-func NewYapService(db database.PgxPool, queries repository.Querier, userService users.UserService,
-	mediaService media.MediaService) YapService {
-	return &yapService{
-		db:           db,
-		queries:      queries,
-		userService:  userService,
-		mediaService: mediaService}
-}
-
 // UploadMedia handles media upload for yap related operations
-func (s *yapService) UploadMedia(ctx context.Context, media *multipart.FileHeader) (*MediaItem, error) {
-	user, err := s.userService.GetCurrentUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func UploadMedia(ctx context.Context, mediaService media.MediaService, media *multipart.FileHeader) (*MediaItem, error) {
 	// Upload to storage
-	folderName := fmt.Sprintf("yaps/%s", user.ID)
-	mediaDetail, err := s.mediaService.UploadMedia(ctx, media, folderName)
+	folderName := fmt.Sprintf("yaps/%s", "DUMMY")
+	mediaDetail, err := mediaService.UploadMedia(ctx, media, folderName)
 	if err != nil {
 		return nil, err
 	}
@@ -70,25 +40,22 @@ func (s *yapService) UploadMedia(ctx context.Context, media *multipart.FileHeade
 
 // Yap CRUD operations
 
-func (s *yapService) CreateYap(ctx context.Context, req CreateYapRequest) (*YapResponse, error) {
-	user, err := s.userService.GetCurrentUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func CreateYap(ctx context.Context, dbpool *pgxpool.Pool, mediaService media.MediaService, req CreateYapRequest) (*YapResponse, error) {
 	hashtag, mentions := extractHashtagsAndMentions(req.Content)
-
+	queries := repository.New(dbpool)
 	var result *YapResponse
-	err = s.executeInTransaction(ctx, func(qtx repository.Querier, tx pgx.Tx) error {
+	err := executeInTransaction(ctx, dbpool, queries, func(qtx repository.Querier, tx pgx.Tx) error {
 		var yap repository.CreateYapRow
-		yap, err = s.createYapRecord(ctx, qtx, user.ID, req, hashtag, mentions)
+		var userUUID pgtype.UUID
+		userUUID.Scan("DUMMY")
+		yap, err := createYapRecord(ctx, qtx, userUUID, req, hashtag, mentions)
 		if err != nil {
 			return err
 		}
 
 		// Associate media with yap
 		var mediaItems []*MediaItem
-		mediaItems, err = s.associateMedia(ctx, tx, yap.YapID, req.MediaIDs)
+		mediaItems, err = associateMedia(ctx, mediaService, tx, yap.YapID, req.MediaIDs)
 
 		yapRow := ConvertCreateYapRow(yap)
 		result = mapYapToResponse(yapRow, mediaItems)
@@ -102,8 +69,8 @@ func (s *yapService) CreateYap(ctx context.Context, req CreateYapRequest) (*YapR
 
 }
 
-func (s *yapService) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapResponse, error) {
-	yap, err := s.queries.GetYapByID(ctx, yapID)
+func GetYapByID(ctx context.Context, dbpool *pgxpool.Pool, mediaService media.MediaService, yapID pgtype.UUID) (*YapResponse, error) {
+	yap, err := repository.New(dbpool).GetYapByID(ctx, yapID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrYapNotFound
@@ -111,7 +78,7 @@ func (s *yapService) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapRes
 		return nil, err
 	}
 
-	mediaItems, err := s.getMediaItems(ctx, yapID)
+	mediaItems, err := getMediaItems(ctx, mediaService, yapID)
 	if err != nil {
 		return nil, err
 	}
@@ -121,8 +88,9 @@ func (s *yapService) GetYapByID(ctx context.Context, yapID pgtype.UUID) (*YapRes
 }
 
 // ListYapsByUser fetches yaps made by a user
-func (s *yapService) ListYapsByUser(ctx context.Context, req ListYapsRequest) ([]*YapResponse, error) {
-	userID, err := s.resolveUserID(ctx, req.UserID)
+func ListYapsByUser(ctx context.Context, dbpool *pgxpool.Pool, mediaService media.MediaService, req ListYapsRequest) ([]*YapResponse, error) {
+	userID, err := resolveUserID(ctx, req.UserID)
+	println("Here inside ListYapsByUser")
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +101,7 @@ func (s *yapService) ListYapsByUser(ctx context.Context, req ListYapsRequest) ([
 		Column3: req.Offset,
 	}
 
-	yaps, err := s.queries.ListYapsByUser(ctx, params)
+	yaps, err := repository.New(dbpool).ListYapsByUser(ctx, params)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrYapNotFound
@@ -142,31 +110,29 @@ func (s *yapService) ListYapsByUser(ctx context.Context, req ListYapsRequest) ([
 		return nil, err
 	}
 
-	return s.buildYapResponses(ctx, yaps)
+	return buildYapResponses(ctx, yaps, mediaService)
 }
 
 // UpdateYap updates an existing Yap with the provided information.
 // Note: This feature is currently implemented but may be removed in the future
 // in the case that a yap is decidedly immutable
-func (s *yapService) UpdateYap(ctx context.Context, yapID pgtype.UUID, req UpdateYapRequest) (*YapResponse, error) {
+func UpdateYap(ctx context.Context, dbpool *pgxpool.Pool, mediaService media.MediaService, yapID pgtype.UUID, req UpdateYapRequest) (*YapResponse, error) {
 	var updatedYap repository.UpdateYapRow
+	queries := repository.New(dbpool)
 
-	err := s.executeInTransaction(ctx, func(qtx repository.Querier, tx pgx.Tx) error {
-		user, err := s.userService.GetCurrentUser(ctx)
+	err := executeInTransaction(ctx, dbpool, queries, func(qtx repository.Querier, tx pgx.Tx) error {
+		var userID pgtype.UUID
+		userID.Scan("DUMMY")
+		if _, err := validateYap(ctx, queries, yapID, userID); err != nil {
+			return err
+		}
+
+		updatedYap, err := updateYapRecord(ctx, qtx, yapID, userID, req)
 		if err != nil {
 			return err
 		}
 
-		if _, err = s.validateYap(ctx, yapID, user.ID); err != nil {
-			return err
-		}
-
-		updatedYap, err = s.updateYapRecord(ctx, qtx, yapID, user.ID, req)
-		if err != nil {
-			return err
-		}
-
-		err = s.handleMediaUpdate(ctx, tx, updatedYap.YapID, req.MediaIDs)
+		err = handleMediaUpdate(ctx, mediaService, tx, updatedYap.YapID, req.MediaIDs)
 		if err != nil {
 			return err
 		}
@@ -177,7 +143,7 @@ func (s *yapService) UpdateYap(ctx context.Context, yapID pgtype.UUID, req Updat
 		return nil, err
 	}
 
-	mediaItems, err := s.getMediaItems(ctx, yapID)
+	mediaItems, err := getMediaItems(ctx, mediaService, yapID)
 	if err != nil {
 		return nil, err
 	}
@@ -188,12 +154,11 @@ func (s *yapService) UpdateYap(ctx context.Context, yapID pgtype.UUID, req Updat
 	return yapResponse, nil
 }
 
-func (s *yapService) DeleteYap(ctx context.Context, yapID pgtype.UUID) error {
-	return s.executeInTransaction(ctx, func(qtx repository.Querier, tx pgx.Tx) error {
-		user, err := s.userService.GetCurrentUser(ctx)
-		if err != nil {
-			return err
-		}
+func DeleteYap(ctx context.Context, dbpool *pgxpool.Pool, mediaService media.MediaService, yapID pgtype.UUID) error {
+	queries := repository.New(dbpool)
+	return executeInTransaction(ctx, dbpool, queries, func(qtx repository.Querier, tx pgx.Tx) error {
+		var userID pgtype.UUID
+		userID.Scan("DUMMY")
 
 		yap, err := qtx.GetYapByID(ctx, yapID)
 		if err != nil {
@@ -205,12 +170,12 @@ func (s *yapService) DeleteYap(ctx context.Context, yapID pgtype.UUID) error {
 			}
 		}
 
-		if yap.UserID != user.ID {
+		if yap.UserID != userID {
 			return ErrUnauthorizedYapper
 		}
 
 		// Just orphan the media and let cleanup job handle it
-		mediaSvc := s.mediaService.WithTx(tx)
+		mediaSvc := mediaService.WithTx(tx)
 		err = mediaSvc.OrphanMedia(ctx, yap.YapID, YapContentType)
 		if err != nil {
 			return fmt.Errorf("failed to orphan media: %v", err)
@@ -218,7 +183,7 @@ func (s *yapService) DeleteYap(ctx context.Context, yapID pgtype.UUID) error {
 
 		params := repository.DeleteYapParams{
 			YapID:  yapID,
-			UserID: user.ID,
+			UserID: userID,
 		}
 
 		err = qtx.DeleteYap(ctx, params)

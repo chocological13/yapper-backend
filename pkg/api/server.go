@@ -2,11 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/chocological13/yapper-backend/pkg/cronjob"
-	"github.com/chocological13/yapper-backend/pkg/media"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,8 +13,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chocological13/yapper-backend/pkg/api/middleware"
+	"github.com/chocological13/yapper-backend/pkg/cronjob"
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/chocological13/yapper-backend/pkg/media"
+
+	"github.com/chocological13/yapper-backend/pkg/api/middleware"
+	"github.com/chocological13/yapper-backend/pkg/apierror"
 	"github.com/chocological13/yapper-backend/pkg/users"
 	"github.com/chocological13/yapper-backend/pkg/yap"
 	"github.com/redis/go-redis/v9"
@@ -34,41 +37,38 @@ type config struct {
 }
 
 type app struct {
-	cfg    config
-	logger *slog.Logger
-	dbpool *pgxpool.Pool
-	rdb    *redis.Client
+	cfg          config
+	logger       *slog.Logger
+	dbpool       *pgxpool.Pool
+	rdb          *redis.Client
+	errorHandler *apierror.ErrorHandler
 }
 
-func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, storageService media.StorageService) {
+func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, storageService media.StorageService, logger *slog.Logger) {
 	var cfg config
 
 	flag.IntVar(&cfg.port, "port", 8080, "API server port")
 	flag.StringVar(&cfg.env, "env", "dev", "Environment (dev|staging|prod)")
 	flag.Parse()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	errorHandler := apierror.New(logger)
 
 	app := &app{
 		cfg,
 		logger,
 		dbpool,
 		rdb,
+		errorHandler,
 	}
-
-	authAPI := auth.New(app.dbpool, app.rdb)
 
 	queries := repository.New(app.dbpool)
 
-	userService := users.NewUserService(queries)
-	userHandler := users.NewUserHandler(userService)
+	authAPI := auth.New(app.dbpool, app.rdb, app.errorHandler)
+	userHandler := users.NewUserHandler(app.dbpool, app.errorHandler)
 
 	mediaService := media.NewMediaService(app.dbpool, queries, storageService, app.logger)
 
-	yapService := yap.NewYapService(app.dbpool, queries, userService, mediaService)
-	yapHandler := yap.NewYapHandler(yapService)
+	yapHandler := yap.NewYapHandler(dbpool, errorHandler, mediaService)
 
 	scheduler := cronjob.NewScheduler(mediaService, app.logger)
 	scheduler.Start()
@@ -77,43 +77,62 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, storageService media.S
 
 	// Public routes
 	// Auth routes
-	mux.HandleFunc("POST "+apiVersion+"/register", authAPI.RegisterUser)
-	mux.HandleFunc("POST "+apiVersion+"/login", authAPI.LoginUser)
-	mux.Handle("POST "+apiVersion+"/logout", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.LogoutUser)))
+	mux.HandleFunc("POST /register", authAPI.RegisterUser)
+	mux.HandleFunc("POST /login", authAPI.LoginUser)
+	mux.Handle("POST /logout", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.LogoutUser)))
 
 	// Users routes
-	mux.HandleFunc("POST "+apiVersion+"/forgot-password", authAPI.InitiateForgotPassword)
-	mux.HandleFunc("PATCH "+apiVersion+"/forgot-password", authAPI.CompleteForgotPassword)
+	mux.HandleFunc("POST /forgot-password", authAPI.InitiateForgotPassword)
+	mux.HandleFunc("PATCH /forgot-password", authAPI.CompleteForgotPassword)
 
 	// Testing purposes
-	mux.HandleFunc("GET "+apiVersion+"/users", userHandler.GetUser)
+	mux.HandleFunc("GET /users", userHandler.GetUser)
 
 	// Protected routes (auth required)
 
 	// yaps
-	mux.HandleFunc("GET "+apiVersion+"/yaps/{id}", yapHandler.GetYapByID)
-	mux.HandleFunc("GET "+apiVersion+"/yaps", yapHandler.ListYapsByUser)
-	mux.Handle("GET "+apiVersion+"/yaps/me", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.ListMyYaps)))
-	mux.Handle("POST "+apiVersion+"/yaps/upload", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.UploadMedia)))
-	mux.Handle("POST "+apiVersion+"/yaps", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.CreateYap)))
-	mux.Handle("PATCH "+apiVersion+"/yaps/{id}", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.UpdateYap)))
-	mux.Handle("DELETE "+apiVersion+"/yaps/{id}", middleware.Auth(app.rdb)(http.HandlerFunc(yapHandler.DeleteYap)))
+	mux.HandleFunc("GET /yaps/{id}", yapHandler.GetYapByID)
+	mux.HandleFunc("GET /yaps", yapHandler.ListYapsByUser)
 
 	// Auth-related users operations
-	mux.Handle("POST "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
-		InitiateUpdateUserEmail)))
-	mux.Handle("PATCH "+apiVersion+"/users/me/email", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
-		CompleteUpdateUserEmail)))
-	mux.Handle("PATCH "+apiVersion+"/users/me/reset-password", middleware.Auth(app.rdb)(http.HandlerFunc(authAPI.
-		ResetPassword)))
+	authMux := http.NewServeMux()
+	authMux.HandleFunc("POST /users/me/email", authAPI.InitiateUpdateUserEmail)
+	authMux.HandleFunc("PATCH /users/me/email", authAPI.CompleteUpdateUserEmail)
+	authMux.HandleFunc("PATCH /users/me/reset-password", authAPI.ResetPassword)
+
+	// yaps
+	authMux.HandleFunc("GET /yaps/m", func(w http.ResponseWriter, r *http.Request) {
+		// Create a response structure
+		response := map[string]interface{}{
+			"status":  "ok",
+			"message": "Ping successful",
+		}
+
+		// Set content type header
+		w.Header().Set("Content-Type", "application/json")
+
+		// Write the response
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	})
+	authMux.HandleFunc("POST /yaps/upload", yapHandler.UploadMedia)
+	authMux.HandleFunc("POST /yaps", yapHandler.CreateYap)
+	authMux.HandleFunc("PATCH /yaps/{id}", yapHandler.UpdateYap)
+	authMux.HandleFunc("DELETE /yaps/{id}", yapHandler.DeleteYap)
 
 	// Users
-	mux.Handle("GET "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.GetCurrentUser)))
-	mux.Handle("PUT "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.UpdateUser)))
-	mux.Handle("DELETE "+apiVersion+"/users/me", middleware.Auth(app.rdb)(http.HandlerFunc(userHandler.DeleteUser)))
+	authMux.HandleFunc("GET /users/me", userHandler.GetCurrentUser)
+	authMux.HandleFunc("PUT /users/me", userHandler.UpdateUser)
+	authMux.HandleFunc("DELETE /users/me", userHandler.DeleteUser)
+
+	mux.Handle("/", middleware.Auth(app.rdb)(authMux))
+
+	// /v1 prefix
+	v1 := http.NewServeMux()
+	v1.Handle("/v1/", http.StripPrefix("/v1", mux))
 
 	// Add future middleware here
-	muxWithMiddleware := middleware.LogRequests(logger)(mux)
+	muxWithMiddleware := middleware.LogRequests(logger)(v1)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.port),

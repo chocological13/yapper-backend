@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:alpine
+    image: postgis/postgis
     ports:
       - "5432:5432"
     environment:
@@ -8,5 +8,9 @@ services:
       POSTGRES_PASSWORD: passw0rd
     # volumes:
     #   - db_data:/var/lib/postgresql/data
+  s3:
+    image: minio/minio
+    ports:
+      - "9000:9000"
 # volumes:
 # db_data:

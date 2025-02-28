@@ -4,23 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"regexp"
+
+	"github.com/chocological13/yapper-backend/pkg/apperrors"
+	"github.com/chocological13/yapper-backend/pkg/media"
 
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Transaction helper
-func (s *yapService) executeInTransaction(ctx context.Context, fn func(repository.Querier, pgx.Tx) error) error {
-	tx, err := s.db.Begin(ctx)
+func executeInTransaction(ctx context.Context, dbpool *pgxpool.Pool, queries *repository.Queries, fn func(repository.Querier, pgx.Tx) error) error {
+	tx, err := dbpool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	qtx := repository.New(tx)
+	qtx := queries.WithTx(tx)
 
 	if err = fn(qtx, tx); err != nil {
 		return err
@@ -53,7 +56,7 @@ func extractMatches(regex *regexp.Regexp, content string) []string {
 }
 
 // Yap record helpers
-func (s *yapService) createYapRecord(ctx context.Context, qtx repository.Querier, userID pgtype.UUID,
+func createYapRecord(ctx context.Context, qtx repository.Querier, userID pgtype.UUID,
 	req CreateYapRequest, hashtags, mentions []string) (repository.CreateYapRow, error) {
 
 	var lat, lng float64
@@ -72,10 +75,10 @@ func (s *yapService) createYapRecord(ctx context.Context, qtx repository.Querier
 	})
 }
 
-func (s *yapService) updateYapRecord(ctx context.Context, qtx repository.Querier,
+func updateYapRecord(ctx context.Context, qtx repository.Querier,
 	yapID, userID pgtype.UUID, req UpdateYapRequest) (repository.UpdateYapRow, error) {
 
-	params, err := s.buildUpdateParams(req, yapID, userID)
+	params, err := buildUpdateParams(req, yapID, userID)
 	if err != nil {
 		return repository.UpdateYapRow{}, err
 	}
@@ -83,7 +86,7 @@ func (s *yapService) updateYapRecord(ctx context.Context, qtx repository.Querier
 	return qtx.UpdateYap(ctx, params)
 }
 
-func (s *yapService) buildUpdateParams(req UpdateYapRequest, yapID,
+func buildUpdateParams(req UpdateYapRequest, yapID,
 	userID pgtype.UUID) (repository.UpdateYapParams,
 	error) {
 	params := repository.UpdateYapParams{
@@ -119,10 +122,10 @@ func (s *yapService) buildUpdateParams(req UpdateYapRequest, yapID,
 }
 
 // Media handling helpers
-func (s *yapService) associateMedia(ctx context.Context, tx pgx.Tx, yapID pgtype.UUID,
+func associateMedia(ctx context.Context, mediaService media.MediaService, tx pgx.Tx, yapID pgtype.UUID,
 	mediaIDs []pgtype.UUID) ([]*MediaItem, error) {
 
-	mediaSvc := s.mediaService.WithTx(tx)
+	mediaSvc := mediaService.WithTx(tx)
 	mediaItems := make([]*MediaItem, 0, len(mediaIDs))
 
 	for _, mediaID := range mediaIDs {
@@ -145,14 +148,14 @@ func (s *yapService) associateMedia(ctx context.Context, tx pgx.Tx, yapID pgtype
 	return mediaItems, nil
 }
 
-func (s *yapService) handleMediaUpdate(ctx context.Context, tx pgx.Tx, yapID pgtype.UUID,
+func handleMediaUpdate(ctx context.Context, mediaService media.MediaService, tx pgx.Tx, yapID pgtype.UUID,
 	mediaIDs []*pgtype.UUID) error {
 
 	if mediaIDs == nil {
 		return nil
 	}
 
-	mediaSvc := s.mediaService.WithTx(tx)
+	mediaSvc := mediaService.WithTx(tx)
 	if err := mediaSvc.OrphanMedia(ctx, yapID, YapContentType); err != nil {
 		return fmt.Errorf("failed to orphan media: %v", err)
 	}
@@ -172,8 +175,8 @@ func (s *yapService) handleMediaUpdate(ctx context.Context, tx pgx.Tx, yapID pgt
 }
 
 // Validation and utility helpers
-func (s *yapService) validateYap(ctx context.Context, yapID, userID pgtype.UUID) (bool, error) {
-	yap, err := s.queries.GetYapByID(ctx, yapID)
+func validateYap(ctx context.Context, queries *repository.Queries, yapID, userID pgtype.UUID) (bool, error) {
+	yap, err := queries.GetYapByID(ctx, yapID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, ErrYapNotFound
@@ -188,15 +191,7 @@ func (s *yapService) validateYap(ctx context.Context, yapID, userID pgtype.UUID)
 	return true, nil
 }
 
-func (s *yapService) resolveUserID(ctx context.Context, userIDStr string) (pgtype.UUID, error) {
-	if userIDStr == "" {
-		user, err := s.userService.GetCurrentUser(ctx)
-		if err != nil {
-			return pgtype.UUID{}, err
-		}
-		return user.ID, nil
-	}
-
+func resolveUserID(ctx context.Context, userIDStr string) (pgtype.UUID, error) {
 	var userID pgtype.UUID
 	if err := userID.Scan(userIDStr); err != nil {
 		return pgtype.UUID{}, apperrors.ErrInvalidUUID
@@ -205,13 +200,16 @@ func (s *yapService) resolveUserID(ctx context.Context, userIDStr string) (pgtyp
 	return userID, nil
 }
 
-func (s *yapService) buildYapResponses(ctx context.Context,
-	yaps []repository.ListYapsByUserRow) ([]*YapResponse, error) {
+func buildYapResponses(
+	ctx context.Context,
+	yaps []repository.ListYapsByUserRow,
+	mediaService media.MediaService,
+) ([]*YapResponse, error) {
 
 	yapResponses := make([]*YapResponse, len(yaps))
 	for i, yap := range yaps {
 		yapRow := ConvertGetListYapsByUserRow(yap)
-		mediaItems, err := s.getMediaItems(ctx, yap.YapID)
+		mediaItems, err := getMediaItems(ctx, mediaService, yap.YapID)
 		if err != nil {
 			return nil, err
 		}
@@ -220,8 +218,8 @@ func (s *yapService) buildYapResponses(ctx context.Context,
 	return yapResponses, nil
 }
 
-func (s *yapService) getMediaItems(ctx context.Context, yapID pgtype.UUID) ([]*MediaItem, error) {
-	mediaDetails, err := s.mediaService.ListByContent(ctx, yapID, YapContentType)
+func getMediaItems(ctx context.Context, mediaService media.MediaService, yapID pgtype.UUID) ([]*MediaItem, error) {
+	mediaDetails, err := mediaService.ListByContent(ctx, yapID, YapContentType)
 	if err != nil {
 		return nil, err
 	}
