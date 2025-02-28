@@ -4,7 +4,7 @@ WHERE user_id = $1 OR username = $2 OR email = $3
 AND deleted_at IS NULL;
 
 -- name: NewUser :one
-insert into users (username, email, password) values ($1, $2, $3) returning email;
+insert into users (username, email, password) values ($1, $2, $3) returning user_id;
 
 -- name: UpdateUser :one
 UPDATE users

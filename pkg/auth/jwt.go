@@ -11,10 +11,10 @@ import (
 
 var secretKey = []byte("secretkey")
 
-func createJWT(email string) (string, error) {
+func createJWT(uuid string) (string, error) {
 
 	claims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": email,
+		"sub": uuid,
 		"iss": "yapper",
 		"exp": time.Now().Add(time.Hour * 24 * 7).Unix(),
 		"iat": time.Now().Unix(),

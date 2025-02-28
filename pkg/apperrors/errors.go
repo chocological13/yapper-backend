@@ -8,4 +8,5 @@ var (
 	ErrDuplicateUsername  = errors.New("username already exists")
 	ErrContextNotFound    = errors.New("context not found")
 	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrInvalidUUID        = errors.New("invalid UUID")
 )

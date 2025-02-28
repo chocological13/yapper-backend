@@ -12,9 +12,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chocological13/yapper-backend/pkg/cronjob"
+	"github.com/chocological13/yapper-backend/pkg/database/repository"
+	"github.com/chocological13/yapper-backend/pkg/media"
+
 	"github.com/chocological13/yapper-backend/pkg/api/middleware"
 	"github.com/chocological13/yapper-backend/pkg/apierror"
 	"github.com/chocological13/yapper-backend/pkg/users"
+	"github.com/chocological13/yapper-backend/pkg/yap"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/chocological13/yapper-backend/pkg/auth"
@@ -38,7 +43,7 @@ type app struct {
 	errorHandler *apierror.ErrorHandler
 }
 
-func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, logger *slog.Logger) {
+func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, storageService media.StorageService, logger *slog.Logger) {
 	var cfg config
 
 	flag.IntVar(&cfg.port, "port", 8080, "API server port")
@@ -55,8 +60,17 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, logger *slog.Logger) {
 		errorHandler,
 	}
 
+	queries := repository.New(app.dbpool)
+
 	authAPI := auth.New(app.dbpool, app.rdb, app.errorHandler)
 	userHandler := users.NewUserHandler(app.dbpool, app.errorHandler)
+
+	mediaService := media.NewMediaService(app.dbpool, queries, storageService, app.logger)
+
+	yapHandler := yap.NewYapHandler(dbpool, errorHandler, mediaService)
+
+	scheduler := cronjob.NewScheduler(mediaService, app.logger)
+	scheduler.Start()
 
 	mux := http.NewServeMux()
 
@@ -73,13 +87,22 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, logger *slog.Logger) {
 	// Testing purposes
 	mux.HandleFunc("GET /users", userHandler.GetUser)
 
-	// Protected routes (auth required)
+	// yaps
+	mux.HandleFunc("GET /yaps/{id}", yapHandler.GetYapByID)
+	mux.HandleFunc("GET /yaps", yapHandler.ListYapsByUser)
 
+	// Protected routes (auth required)
 	// Auth-related users operations
 	authMux := http.NewServeMux()
 	authMux.HandleFunc("POST /users/me/email", authAPI.InitiateUpdateUserEmail)
 	authMux.HandleFunc("PATCH /users/me/email", authAPI.CompleteUpdateUserEmail)
 	authMux.HandleFunc("PATCH /users/me/reset-password", authAPI.ResetPassword)
+
+	// yaps
+	authMux.HandleFunc("POST /yaps/upload", yapHandler.UploadMedia)
+	authMux.HandleFunc("POST /yaps", yapHandler.CreateYap)
+	authMux.HandleFunc("PATCH /yaps/{id}", yapHandler.UpdateYap)
+	authMux.HandleFunc("DELETE /yaps/{id}", yapHandler.DeleteYap)
 
 	// Users
 	authMux.HandleFunc("GET /users/me", userHandler.GetCurrentUser)

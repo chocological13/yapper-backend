@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/redis/go-redis/v9"
-	"time"
 
 	"github.com/chocological13/yapper-backend/pkg/database/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,7 +44,9 @@ func register(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *A
 		}
 	}
 
-	jwt, err := createJWT(user)
+	println(user.String())
+
+	jwt, err := createJWT(user.String())
 	if err != nil {
 		return "", ErrJWTGenerationError
 	}
@@ -76,7 +79,7 @@ func login(ctx context.Context, dbpool *pgxpool.Pool, rdb *redis.Client, p *Auth
 		return "", apperrors.ErrInvalidCredentials
 	}
 
-	val, _ := rdb.Get(ctx, fmt.Sprintf("jwt:%s", p.Email)).Result()
+	val, _ := rdb.Get(ctx, fmt.Sprintf("jwt:%s", user.UserID.String())).Result()
 	if val != "" {
 		token := fmt.Sprintf("Bearer %s", val)
 		isBlacklisted, _ := rdb.Get(ctx, fmt.Sprintf("jwt:blacklist:%s", token)).Result()
