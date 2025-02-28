@@ -2,11 +2,12 @@ package util
 
 import (
 	"errors"
-	"github.com/jackc/pgx/v5/pgtype"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var (
@@ -15,8 +16,9 @@ var (
 
 // ParseUUIDParam extracts and parses a UUID parameter from the URL
 func ParseUUIDParam(r *http.Request, prefix string) (pgtype.UUID, error) {
+	println(r.URL.Path)
 	path := strings.TrimPrefix(r.URL.Path, prefix)
-
+	println(path)
 	uuidStr := strings.Split(path, "/")[0]
 
 	var uuid pgtype.UUID

@@ -9,6 +9,7 @@ import (
 	"github.com/chocological13/yapper-backend/pkg/apperrors"
 	"github.com/chocological13/yapper-backend/pkg/media"
 	"github.com/chocological13/yapper-backend/pkg/util"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -27,6 +28,12 @@ func NewYapHandler(dbpool *pgxpool.Pool, errorHandler *apierror.ErrorHandler, me
 }
 
 func (h *YapHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
+	var userID pgtype.UUID
+	if err := userID.Scan(r.Context().Value("sub")); err != nil {
+		h.errorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
 	file, err := parseMultipartForm(r)
 	if err != nil {
 		h.errorHandler.BadRequestResponse(w, r, err)
@@ -39,7 +46,7 @@ func (h *YapHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mediaDetails, err := UploadMedia(r.Context(), h.mediaService, file)
+	mediaDetails, err := UploadMedia(r.Context(), h.mediaService, file, userID)
 	if err != nil {
 		h.errorHandler.BadRequestResponse(w, r, err)
 		return
@@ -49,6 +56,12 @@ func (h *YapHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *YapHandler) CreateYap(w http.ResponseWriter, r *http.Request) {
+	var userID pgtype.UUID
+	if err := userID.Scan(r.Context().Value("sub")); err != nil {
+		h.errorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
 	var input CreateYapRequest
 	if err := util.ReadJSON(w, r, &input); err != nil {
 		h.errorHandler.BadRequestResponse(w, r, err)
@@ -61,7 +74,7 @@ func (h *YapHandler) CreateYap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yap, err := CreateYap(r.Context(), h.dbpool, h.mediaService, input)
+	yap, err := CreateYap(r.Context(), h.dbpool, h.mediaService, input, userID)
 	if err != nil {
 		h.handleServiceErrors(w, r, err)
 		return
@@ -71,7 +84,7 @@ func (h *YapHandler) CreateYap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *YapHandler) GetYapByID(w http.ResponseWriter, r *http.Request) {
-	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
+	yapID, err := util.ParseUUIDParam(r, "/yaps/")
 	if err != nil {
 		h.errorHandler.ServerErrorResponse(w, r, err)
 		return
@@ -101,7 +114,13 @@ func (h *YapHandler) ListYapsByUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *YapHandler) UpdateYap(w http.ResponseWriter, r *http.Request) {
-	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
+	var userID pgtype.UUID
+	if err := userID.Scan(r.Context().Value("sub")); err != nil {
+		h.errorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	yapID, err := util.ParseUUIDParam(r, "/yaps/")
 	if err != nil {
 		h.errorHandler.ServerErrorResponse(w, r, err)
 		return
@@ -119,7 +138,7 @@ func (h *YapHandler) UpdateYap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yap, err := UpdateYap(r.Context(), h.dbpool, h.mediaService, yapID, input)
+	yap, err := UpdateYap(r.Context(), h.dbpool, h.mediaService, yapID, input, userID)
 	if err != nil {
 		h.handleServiceErrors(w, r, err)
 		return
@@ -133,13 +152,19 @@ func (h *YapHandler) UpdateYap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *YapHandler) DeleteYap(w http.ResponseWriter, r *http.Request) {
-	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
+	var userID pgtype.UUID
+	if err := userID.Scan(r.Context().Value("sub")); err != nil {
+		h.errorHandler.BadRequestResponse(w, r, err)
+		return
+	}
+
+	yapID, err := util.ParseUUIDParam(r, "/yaps/")
 	if err != nil {
 		h.errorHandler.BadRequestResponse(w, r, err)
 		return
 	}
 
-	err = DeleteYap(r.Context(), h.dbpool, h.mediaService, yapID)
+	err = DeleteYap(r.Context(), h.dbpool, h.mediaService, yapID, userID)
 	if err != nil {
 		h.handleServiceErrors(w, r, err)
 		return
