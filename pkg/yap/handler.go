@@ -71,7 +71,6 @@ func (h *YapHandler) CreateYap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *YapHandler) GetYapByID(w http.ResponseWriter, r *http.Request) {
-	println("ffuufufuf")
 	yapID, err := util.ParseUUIDParam(r, "/api/v1/yaps/")
 	if err != nil {
 		h.errorHandler.ServerErrorResponse(w, r, err)
@@ -99,12 +98,6 @@ func (h *YapHandler) ListYapsByUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.fetchYapsByUser(w, r, userIDstr)
-}
-
-func (h *YapHandler) ListMyYaps(w http.ResponseWriter, r *http.Request) {
-	// println("hwhwh")
-	// h.fetchYapsByUser(w, r, "512aeba6-f538-11ef-bba0-9f271bc0896d")
-	util.WriteJSON(w, http.StatusOK, util.Envelope{"Data": "ddsdsds"}, nil)
 }
 
 func (h *YapHandler) UpdateYap(w http.ResponseWriter, r *http.Request) {

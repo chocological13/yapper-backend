@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -88,12 +87,11 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, storageService media.S
 	// Testing purposes
 	mux.HandleFunc("GET /users", userHandler.GetUser)
 
-	// Protected routes (auth required)
-
 	// yaps
 	mux.HandleFunc("GET /yaps/{id}", yapHandler.GetYapByID)
 	mux.HandleFunc("GET /yaps", yapHandler.ListYapsByUser)
 
+	// Protected routes (auth required)
 	// Auth-related users operations
 	authMux := http.NewServeMux()
 	authMux.HandleFunc("POST /users/me/email", authAPI.InitiateUpdateUserEmail)
@@ -101,20 +99,6 @@ func StartServer(dbpool *pgxpool.Pool, rdb *redis.Client, storageService media.S
 	authMux.HandleFunc("PATCH /users/me/reset-password", authAPI.ResetPassword)
 
 	// yaps
-	authMux.HandleFunc("GET /yaps/m", func(w http.ResponseWriter, r *http.Request) {
-		// Create a response structure
-		response := map[string]interface{}{
-			"status":  "ok",
-			"message": "Ping successful",
-		}
-
-		// Set content type header
-		w.Header().Set("Content-Type", "application/json")
-
-		// Write the response
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(response)
-	})
 	authMux.HandleFunc("POST /yaps/upload", yapHandler.UploadMedia)
 	authMux.HandleFunc("POST /yaps", yapHandler.CreateYap)
 	authMux.HandleFunc("PATCH /yaps/{id}", yapHandler.UpdateYap)
